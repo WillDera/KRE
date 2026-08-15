@@ -1,0 +1,13 @@
+[package]
+name = "koma-core"
+description = "Koma Rendering Engine core: shared types, KIR, serialization, errors, plugin interfaces."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+prost = "0.13"
+thiserror = "2"
+
+[build-dependencies]
+prost-build = "0.13"

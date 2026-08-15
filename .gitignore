@@ -1,0 +1,17 @@
+# Rust
+/target
+**/*.rs.bk
+
+# macOS
+.DS_Store
+
+# Generated knowledge graph
+graphify-out/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts (protoc-generated code lives in target/ via OUT_DIR)

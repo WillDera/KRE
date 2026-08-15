@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package koma.kir;
+
+option go_package = "koma/kir";
+
+// ============================================================================
+// Koma Intermediate Representation (KIR) — v0.1
+//
+// Stable, versioned, language- and platform-independent document model.
+// Content adapters and external applications produce KIR; the renderer
+// consumes only KIR and never parses source formats.
+//
+// A Chapter is the independent serialization boundary. The runtime streams
+// chapters lazily and must never require the whole Document in memory.
+// ============================================================================
+
+message Document {
+  // KIR schema version, e.g. "0.1.0".
+  string version = 1;
+  DocumentMetadata metadata = 2;
+  repeated Chapter chapters = 3;
+}
+
+message DocumentMetadata {
+  optional string title = 1;
+  optional string author = 2;
+  // BCP-47 language tag, e.g. "en", "zh-Hant", "ar".
+  optional string language = 3;
+  repeated Identifier identifiers = 4;
+  optional Attribution license = 5;
+  // Reproducibility: generator information.
+  string generator = 6;
+  // Reproducibility: deterministic seed. The runtime never depends on
+  // hidden AI state.
+  uint64 seed = 7;
+}
+
+message Identifier {
+  string scheme = 1; // e.g. "isbn", "uuid", "url"
+  string value = 2;
+}
+
+message Chapter {
+  string id = 1;
+  optional string title = 2;
+  repeated Section sections = 3;
+}
+
+message Section {
+  string id = 1;
+  repeated Block blocks = 2;
+}
+
+// A block is one layout / rendering unit inside a section.
+message Block {
+  oneof kind {
+    Paragraph paragraph = 1;
+    Heading heading = 2;
+    ImageBlock image = 3;
+    MediaBlock media = 4;
+    QuoteBlock quote = 5;
+    ListBlock list = 6;
+  }
+}
+
+message Paragraph {
+  repeated TextSpan spans = 1;
+  repeated Annotation annotations = 2;
+  optional SemanticMetadata semantic = 3;
+  // Presentation hint only; never content truth.
+  optional string style_id = 4;
+}
+
+message TextSpan {
+  string text = 1;
+  // Per-span language override, used for shaping and bidi.
+  optional string language = 2;
+  optional SpanStyle style = 3;
+}
+
+message SpanStyle {
+  optional bool bold = 1;
+  optional bool italic = 2;
+  optional bool underline = 3;
+  optional string color = 4;
+}
+
+message Heading {
+  uint32 level = 1;
+  repeated TextSpan spans = 2;
+}
+
+message ImageBlock {
+  string media_id = 1;
+  optional string alt = 2;
+  optional string caption = 3;
+}
+
+message MediaBlock {
+  string media_id = 1;
+  optional string caption = 2;
+}
+
+message QuoteBlock {
+  repeated Block content = 1;
+  optional string attribution = 2;
+}
+
+message ListBlock {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_UNORDERED = 1;
+    KIND_ORDERED = 2;
+  }
+  Kind kind = 1;
+  repeated Block items = 2;
+}
+
+message Annotation {
+  string id = 1;
+  AnnotationKind kind = 2;
+  optional string note = 3;
+}
+
+enum AnnotationKind {
+  ANNOTATION_KIND_UNSPECIFIED = 0;
+  ANNOTATION_KIND_HIGHLIGHT = 1;
+  ANNOTATION_KIND_NOTE = 2;
+  ANNOTATION_KIND_BOOKMARK = 3;
+}
+
+// Semantic layer: meaning, entities, themes, context.
+// Semantic and presentation truth must never alter content truth.
+message SemanticMetadata {
+  repeated EntityRef entities = 1;
+  repeated LocationRef locations = 2;
+  repeated string themes = 3;
+  optional string mood = 4;
+  optional string environment = 5;
+}
+
+message EntityRef {
+  string type = 1; // e.g. "character"
+  string name = 2;
+}
+
+message LocationRef {
+  string type = 1; // e.g. "place"
+  string name = 2;
+}
+
+// License / attribution metadata, supported for every asset:
+// fonts, images, themes, plugins, AI-generated assets, external libraries.
+message Attribution {
+  optional string name = 1;
+  optional string creator = 2;
+  optional string license = 3;
+  optional string source = 4;
+  optional string version = 5;
+}
