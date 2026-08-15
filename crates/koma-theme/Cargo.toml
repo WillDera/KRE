@@ -1,0 +1,11 @@
+[package]
+name = "koma-theme"
+description = "Koma theme engine: versioned, user-editable presentation themes (Phase 5)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+thiserror = "2"

@@ -9,5 +9,6 @@ rust-version.workspace = true
 cosmic-text = "0.13"
 fontdb = "0.16"
 koma-core = { path = "../koma-core" }
+koma-theme = { path = "../koma-theme" }
 swash = "0.2"
 thiserror = "2"

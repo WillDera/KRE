@@ -13,6 +13,7 @@
 pub mod backend;
 pub mod layout;
 pub mod software;
+pub mod theme;
 
 pub use backend::{
     AnimationItem, BackendError, Capabilities, Color, Frame, ImageItem, ParticleItem,
@@ -20,3 +21,4 @@ pub use backend::{
 };
 pub use layout::{LayoutConfig, PlacedGlyph, PlacedLine, layout_blocks};
 pub use software::SoftwareBackend;
+pub use theme::layout_config_from_theme;

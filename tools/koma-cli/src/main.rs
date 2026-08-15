@@ -19,7 +19,8 @@ use koma_compiler::{KomaCompiler, KomaPackage};
 use koma_core::adapters::{ContentAdapter, ContentSource};
 use koma_core::error::validate_version;
 use koma_core::kir::{Block, Document, KIR_VERSION, block};
-use koma_renderer::{LayoutConfig, SoftwareBackend};
+use koma_renderer::{LayoutConfig, SoftwareBackend, layout_config_from_theme};
+use koma_theme::Theme;
 
 #[derive(Parser)]
 #[command(name = "koma", version, about = "Koma Rendering Engine toolchain")]
@@ -43,6 +44,8 @@ enum Command {
         out: Option<PathBuf>,
         #[arg(long, help = "directory of asset files keyed by media id")]
         assets: Option<PathBuf>,
+        #[arg(long, help = "theme YAML file to embed in the package (Phase 5)")]
+        theme: Option<PathBuf>,
     },
     /// Print package metadata and the chapter index.
     Inspect { package: PathBuf },
@@ -65,6 +68,11 @@ enum Command {
         width: u32,
         #[arg(long, default_value_t = 1200, help = "frame height in pixels")]
         height: u32,
+        #[arg(
+            long,
+            help = "theme YAML override (default: package theme or defaults)"
+        )]
+        theme: Option<PathBuf>,
     },
 }
 
@@ -72,9 +80,12 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Import { input, out } => cmd_import(&input, out.as_deref()),
-        Command::Compile { input, out, assets } => {
-            cmd_compile(&input, out.as_deref(), assets.as_deref())
-        }
+        Command::Compile {
+            input,
+            out,
+            assets,
+            theme,
+        } => cmd_compile(&input, out.as_deref(), assets.as_deref(), theme.as_deref()),
         Command::Inspect { package } => cmd_inspect(&package),
         Command::Validate { package } => cmd_validate(&package),
         Command::Preview { package, chapter } => cmd_preview(&package, chapter.as_deref()),
@@ -84,7 +95,15 @@ fn main() -> anyhow::Result<()> {
             out,
             width,
             height,
-        } => cmd_render(&package, chapter.as_deref(), &out, width, height),
+            theme,
+        } => cmd_render(
+            &package,
+            chapter.as_deref(),
+            &out,
+            width,
+            height,
+            theme.as_deref(),
+        ),
     }
 }
 
@@ -103,8 +122,17 @@ fn cmd_import(input: &Path, out: Option<&Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cmd_compile(input: &Path, out: Option<&Path>, assets_dir: Option<&Path>) -> anyhow::Result<()> {
+fn cmd_compile(
+    input: &Path,
+    out: Option<&Path>,
+    assets_dir: Option<&Path>,
+    theme_path: Option<&Path>,
+) -> anyhow::Result<()> {
     let doc = import_document(input)?;
+    let theme = theme_path
+        .map(load_theme)
+        .transpose()
+        .with_context(|| format!("loading theme {}", theme_path.unwrap().display()))?;
     let mut assets = HashMap::new();
     if let Some(dir) = assets_dir {
         for entry in
@@ -124,15 +152,30 @@ fn cmd_compile(input: &Path, out: Option<&Path>, assets_dir: Option<&Path>) -> a
         .unwrap_or_else(|| input.with_extension("koma"));
     let file = fs::File::create(&out).with_context(|| format!("creating {}", out.display()))?;
     let manifest = KomaCompiler
-        .compile(&doc, &assets, file)
+        .compile_with_theme(&doc, &assets, theme.as_ref(), file)
         .with_context(|| format!("compiling {}", out.display()))?;
     println!(
-        "compiled {} chapter(s), {} asset(s) -> {}",
+        "compiled {} chapter(s), {} asset(s){} -> {}",
         manifest.chapters.len(),
         manifest.assets.len(),
+        theme
+            .as_ref()
+            .map(|t| format!(", theme `{}`", t.name))
+            .unwrap_or_default(),
         out.display()
     );
     Ok(())
+}
+
+/// Read and validate a theme file.
+fn load_theme(path: &Path) -> anyhow::Result<Theme> {
+    let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
+    let theme =
+        Theme::parse_yaml(&bytes).with_context(|| format!("parsing theme {}", path.display()))?;
+    theme
+        .validate()
+        .with_context(|| format!("validating theme {}", path.display()))?;
+    Ok(theme)
 }
 
 fn cmd_inspect(path: &Path) -> anyhow::Result<()> {
@@ -165,6 +208,11 @@ fn cmd_inspect(path: &Path) -> anyhow::Result<()> {
     println!("assets ({}):", m.assets.len());
     for a in &m.assets {
         println!("  {}  {} bytes", a.id, a.bytes);
+    }
+    if let Some(theme_path) = &m.theme {
+        println!("theme:      {theme_path}");
+    } else {
+        println!("theme:      (none)");
     }
     Ok(())
 }
@@ -204,9 +252,18 @@ fn cmd_render(
     out: &Path,
     width: u32,
     height: u32,
+    theme_path: Option<&Path>,
 ) -> anyhow::Result<()> {
     let mut pkg =
         KomaPackage::open_file(path).with_context(|| format!("opening {}", path.display()))?;
+
+    // Theme resolution: CLI override > package-embedded theme > defaults.
+    let theme = if let Some(p) = theme_path {
+        Some(load_theme(p)?)
+    } else {
+        pkg.theme().context("reading package theme")?
+    };
+
     let id = match chapter {
         Some(id) => id.to_owned(),
         None => pkg.chapter_ids().next().unwrap_or_default().to_owned(),
@@ -233,10 +290,18 @@ fn cmd_render(
         blocks.extend(section.blocks.iter().cloned());
     }
 
-    let cfg = LayoutConfig {
-        width,
-        height,
-        ..Default::default()
+    let cfg = match &theme {
+        Some(t) => {
+            let mut cfg = layout_config_from_theme(t);
+            cfg.width = width;
+            cfg.height = height;
+            cfg
+        }
+        None => LayoutConfig {
+            width,
+            height,
+            ..Default::default()
+        },
     };
     let mut backend = SoftwareBackend::new();
     let frame = backend
@@ -252,9 +317,13 @@ fn cmd_render(
         .write_image_data(&frame.pixels)
         .context("writing PNG pixels")?;
     println!(
-        "rendered chapter `{id}` ({}x{}) -> {}",
+        "rendered chapter `{id}` ({}x{}){} -> {}",
         frame.width,
         frame.height,
+        theme
+            .as_ref()
+            .map(|t| format!(" with theme `{}`", t.name))
+            .unwrap_or_default(),
         out.display()
     );
     Ok(())

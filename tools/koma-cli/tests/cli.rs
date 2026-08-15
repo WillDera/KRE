@@ -154,6 +154,74 @@ fn inspect_missing_file_fails_gracefully() {
     assert!(out.contains("opening"), "out: {out}");
 }
 
+#[test]
+fn theme_is_embedded_compiled_and_used_by_render() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let epub = dir.path().join("book.epub");
+    std::fs::write(&epub, minimal_epub()).expect("write epub");
+    let theme_file = dir.path().join("theme.yaml");
+    std::fs::write(
+        &theme_file,
+        r##"
+version: "0.1.0"
+name: Imperial Archive
+colors:
+  background: "#0b0e14"
+  text: "#e8e6e3"
+"##,
+    )
+    .expect("write theme");
+    let koma_file = dir.path().join("book.koma");
+
+    // compile --theme embeds the theme
+    let (ok, out) = run(
+        koma(),
+        &[
+            "compile",
+            epub.to_str().unwrap(),
+            "--theme",
+            theme_file.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "compile failed: {out}");
+    assert!(out.contains("theme `Imperial Archive`"), "out: {out}");
+
+    // inspect reports the embedded theme path
+    let (ok, out) = run(koma(), &["inspect", koma_file.to_str().unwrap()]);
+    assert!(ok, "inspect failed: {out}");
+    assert!(out.contains("theme:      theme.yaml"), "inspect: {out}");
+
+    // render picks up the package theme by default
+    let png = dir.path().join("page.png");
+    let (ok, out) = run(
+        koma(),
+        &[
+            "render",
+            koma_file.to_str().unwrap(),
+            "--out",
+            png.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "render failed: {out}");
+    assert!(out.contains("with theme `Imperial Archive`"), "out: {out}");
+    assert!(png.exists(), "expected png");
+
+    // a bad theme file is rejected at compile time
+    let bad_theme = dir.path().join("bad.yaml");
+    std::fs::write(&bad_theme, "version: \"9.9.9\"\nname: Broken\n").expect("write");
+    let (ok, out) = run(
+        koma(),
+        &[
+            "compile",
+            epub.to_str().unwrap(),
+            "--theme",
+            bad_theme.to_str().unwrap(),
+        ],
+    );
+    assert!(!ok, "should fail: {out}");
+    assert!(out.contains("unsupported theme version"), "out: {out}");
+}
+
 // Keep `Path` import used on all platforms (Windows paths differ).
 #[allow(dead_code)]
 fn _path_takes_ref(_p: &Path) {}

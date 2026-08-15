@@ -8,6 +8,7 @@ use std::io::{Read, Seek};
 use std::path::Path;
 
 use koma_core::kir::Chapter;
+use koma_theme::Theme;
 
 use crate::manifest::{KOMA_FORMAT, KOMA_PACKAGE_VERSION, MANIFEST_PATH, PackageManifest};
 
@@ -21,6 +22,8 @@ pub enum PackageError {
     InvalidManifest(String),
     #[error("chapter `{0}` not found")]
     ChapterNotFound(String),
+    #[error("theme error: {0}")]
+    Theme(String),
     #[error("KIR decode error: {0}")]
     Decode(#[from] prost::DecodeError),
     #[error("zip error: {0}")]
@@ -129,6 +132,17 @@ impl<R: Read + Seek> KomaPackage<R> {
             self.chapter(&id)?;
         }
         Ok(())
+    }
+
+    /// The theme embedded in this package, if any.
+    pub fn theme(&mut self) -> Result<Option<Theme>, PackageError> {
+        let Some(path) = self.manifest.theme.clone() else {
+            return Ok(None);
+        };
+        let bytes = self.read_file(&path)?;
+        Theme::parse_yaml(&bytes)
+            .map(Some)
+            .map_err(|e| PackageError::Theme(e.to_string()))
     }
 
     pub(crate) fn read_file(&mut self, path: &str) -> Result<Vec<u8>, PackageError> {

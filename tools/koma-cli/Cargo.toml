@@ -16,6 +16,7 @@ koma-compiler = { path = "../../crates/koma-compiler" }
 koma-core = { path = "../../crates/koma-core" }
 koma-epub = { path = "../../crates/koma-adapters/koma-epub" }
 koma-renderer = { path = "../../crates/koma-renderer" }
+koma-theme = { path = "../../crates/koma-theme" }
 png = "0.17"
 
 [dev-dependencies]

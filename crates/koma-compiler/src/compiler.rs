@@ -5,6 +5,7 @@ use std::io::{Seek, Write};
 
 use koma_core::error::validate_version;
 use koma_core::kir::{Document, block};
+use koma_theme::Theme;
 use prost::Message as _;
 use zip::write::FileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -14,10 +15,15 @@ use crate::manifest::{
     KOMA_PACKAGE_VERSION, LicenseInfo, PackageManifest,
 };
 
+/// Zip entry containing the embedded theme (presentation truth).
+pub const THEME_PATH: &str = "theme.yaml";
+
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
     #[error("invalid document: {0}")]
     InvalidDocument(String),
+    #[error("invalid theme: {0}")]
+    Theme(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("zip error: {0}")]
@@ -44,8 +50,30 @@ impl KomaCompiler {
         assets: &HashMap<String, Vec<u8>>,
         writer: W,
     ) -> Result<PackageManifest, CompileError> {
+        self.compile_with_theme(document, assets, None, writer)
+    }
+
+    /// Compile with an optional embedded theme (`theme.yaml`).
+    pub fn compile_with_theme<W: Write + Seek>(
+        &self,
+        document: &Document,
+        assets: &HashMap<String, Vec<u8>>,
+        theme: Option<&Theme>,
+        writer: W,
+    ) -> Result<PackageManifest, CompileError> {
         validate_version(&document.version)
             .map_err(|e| CompileError::InvalidDocument(e.to_string()))?;
+
+        // Validate the theme before embedding (presentation truth is
+        // versioned too; broken themes must not ship in a package).
+        if let Some(t) = theme {
+            t.validate()
+                .map_err(|e| CompileError::Theme(e.to_string()))?;
+        }
+        let theme_yaml = theme
+            .map(|t| t.to_yaml())
+            .transpose()
+            .map_err(|e| CompileError::Theme(e.to_string()))?;
 
         // Pre-encode chapters (also yields sizes for the manifest) and
         // validate entry ids against path traversal.
@@ -95,7 +123,7 @@ impl KomaCompiler {
                     bytes: embedded.get(id).map_or(0, |b| b.len()),
                 })
                 .collect(),
-            theme: None,
+            theme: theme_yaml.as_ref().map(|_| THEME_PATH.to_owned()),
             scene: None,
         };
 
@@ -115,6 +143,11 @@ impl KomaCompiler {
         for (id, bytes) in &embedded {
             zip.start_file(asset_path(id), entry_options())?;
             zip.write_all(bytes)?;
+        }
+
+        if let Some(yaml) = &theme_yaml {
+            zip.start_file(THEME_PATH, entry_options())?;
+            zip.write_all(yaml.as_bytes())?;
         }
 
         zip.finish()?;
@@ -352,5 +385,74 @@ mod tests {
             .compile(&doc, &HashMap::new(), Cursor::new(Vec::new()))
             .expect_err("should fail");
         assert!(matches!(err, CompileError::InvalidDocument(_)));
+    }
+
+    #[test]
+    fn embeds_theme_and_sets_manifest_path() {
+        let doc = sample_document();
+        let theme = koma_theme::Theme::parse_yaml(
+            br##"
+version: "0.1.0"
+name: Imperial Archive
+colors:
+  background: "#0b0e14"
+"##
+            .as_slice(),
+        )
+        .expect("parse");
+
+        let mut out = Cursor::new(Vec::new());
+        KomaCompiler
+            .compile_with_theme(&doc, &HashMap::new(), Some(&theme), &mut out)
+            .expect("compile");
+        let bytes = out.into_inner();
+
+        let mut pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
+        assert_eq!(
+            pkg.manifest().theme.as_deref(),
+            Some(crate::compiler::THEME_PATH)
+        );
+        let embedded = pkg.theme().expect("theme").expect("some theme");
+        assert_eq!(embedded.name, "Imperial Archive");
+        assert_eq!(
+            embedded.colors.background,
+            koma_theme::Color::rgb(0x0b, 0x0e, 0x14)
+        );
+    }
+
+    #[test]
+    fn theme_embedding_is_deterministic() {
+        let doc = sample_document();
+        let theme = koma_theme::Theme::minimal("Fixed");
+        let build = || {
+            let mut out = Cursor::new(Vec::new());
+            KomaCompiler
+                .compile_with_theme(&doc, &HashMap::new(), Some(&theme), &mut out)
+                .expect("compile");
+            out.into_inner()
+        };
+        assert_eq!(build(), build());
+    }
+
+    #[test]
+    fn rejects_invalid_theme_version() {
+        let doc = sample_document();
+        let theme = koma_theme::Theme {
+            version: "9.9.9".to_owned(),
+            ..koma_theme::Theme::minimal("Bad")
+        };
+        let err = KomaCompiler
+            .compile_with_theme(&doc, &HashMap::new(), Some(&theme), Cursor::new(Vec::new()))
+            .expect_err("should fail");
+        assert!(matches!(err, CompileError::Theme(_)));
+    }
+
+    #[test]
+    fn no_theme_means_no_embedded_theme() {
+        let doc = sample_document();
+        let bytes = compile_to(&doc, &HashMap::new());
+        let mut pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
+        assert!(pkg.manifest().theme.is_none());
+        assert!(pkg.theme().expect("ok").is_none());
     }
 }
