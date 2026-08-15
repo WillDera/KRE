@@ -398,6 +398,7 @@ name = "koma-compiler"
 version = "0.1.0"
 dependencies = [
  "koma-core",
+ "koma-scene",
  "koma-theme",
  "prost",
  "serde",
@@ -433,8 +434,20 @@ dependencies = [
  "cosmic-text",
  "fontdb",
  "koma-core",
+ "koma-scene",
  "koma-theme",
  "swash",
+ "thiserror",
+]
+
+[[package]]
+name = "koma-scene"
+version = "0.1.0"
+dependencies = [
+ "koma-core",
+ "koma-theme",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 

@@ -12,6 +12,7 @@
 
 pub mod backend;
 pub mod layout;
+pub mod scene;
 pub mod software;
 pub mod theme;
 
@@ -20,5 +21,6 @@ pub use backend::{
     RenderBackend, RenderPrimitive, ShaderItem, TextItem, TransformItem,
 };
 pub use layout::{LayoutConfig, PlacedGlyph, PlacedLine, layout_blocks};
+pub use scene::layout_config_from_scene;
 pub use software::SoftwareBackend;
 pub use theme::layout_config_from_theme;

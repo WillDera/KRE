@@ -19,7 +19,9 @@ use koma_compiler::{KomaCompiler, KomaPackage};
 use koma_core::adapters::{ContentAdapter, ContentSource};
 use koma_core::error::validate_version;
 use koma_core::kir::{Block, Document, KIR_VERSION, block};
-use koma_renderer::{LayoutConfig, SoftwareBackend, layout_config_from_theme};
+use koma_renderer::{
+    LayoutConfig, SoftwareBackend, layout_config_from_scene, layout_config_from_theme,
+};
 use koma_theme::Theme;
 
 #[derive(Parser)]
@@ -58,6 +60,9 @@ enum Command {
         chapter: Option<String>,
     },
     /// Render a chapter to a PNG frame with the software backend (Phase 4).
+    ///
+    /// The chapter's compiled scene overrides background/typography; a CLI
+    /// `--theme` still wins over the package scene (Phase 6).
     Render {
         package: PathBuf,
         #[arg(long, help = "chapter id (default: first chapter)")]
@@ -214,6 +219,10 @@ fn cmd_inspect(path: &Path) -> anyhow::Result<()> {
     } else {
         println!("theme:      (none)");
     }
+    println!("scenes ({}):", m.scenes.len());
+    for s in &m.scenes {
+        println!("  {}  {} bytes", s.id, s.bytes);
+    }
     Ok(())
 }
 
@@ -271,6 +280,9 @@ fn cmd_render(
     let ch = pkg
         .chapter(&id)
         .with_context(|| format!("loading chapter `{id}`"))?;
+    let scene = pkg
+        .scene(&id)
+        .with_context(|| format!("loading scene for chapter `{id}`"))?;
 
     // Prepend the chapter title as a heading so it appears in the frame.
     let mut blocks = Vec::new();
@@ -303,6 +315,15 @@ fn cmd_render(
             ..Default::default()
         },
     };
+    // Apply the chapter scene on top: environment background + text-layer
+    // typography. A CLI `--theme` override is the author's intent, so it wins
+    // over the compiled scene (which was synthesized from the package theme or
+    // defaults).
+    let cfg = if theme_path.is_some() {
+        cfg
+    } else {
+        layout_config_from_scene(&scene, &cfg)
+    };
     let mut backend = SoftwareBackend::new();
     let frame = backend
         .render_blocks(&blocks, &cfg)
@@ -320,10 +341,10 @@ fn cmd_render(
         "rendered chapter `{id}` ({}x{}){} -> {}",
         frame.width,
         frame.height,
-        theme
-            .as_ref()
-            .map(|t| format!(" with theme `{}`", t.name))
-            .unwrap_or_default(),
+        match &theme {
+            Some(t) => format!(" with theme `{}`", t.name),
+            None => format!(" in {:?} environment", scene.environment.kind),
+        },
         out.display()
     );
     Ok(())

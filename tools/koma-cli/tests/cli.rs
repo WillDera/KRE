@@ -222,6 +222,38 @@ colors:
     assert!(out.contains("unsupported theme version"), "out: {out}");
 }
 
+#[test]
+fn scenes_are_compiled_inspected_and_used_by_render() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let epub = dir.path().join("book.epub");
+    std::fs::write(&epub, minimal_epub()).expect("write epub");
+    let koma_file = dir.path().join("book.koma");
+
+    let (ok, out) = run(koma(), &["compile", epub.to_str().unwrap()]);
+    assert!(ok, "compile failed: {out}");
+
+    // inspect lists the compiled scene per chapter
+    let (ok, out) = run(koma(), &["inspect", koma_file.to_str().unwrap()]);
+    assert!(ok, "inspect failed: {out}");
+    assert!(out.contains("scenes (1):"), "inspect: {out}");
+    assert!(out.contains("  ch1  "), "inspect: {out}");
+
+    // render applies the chapter scene (no theme present)
+    let png = dir.path().join("page.png");
+    let (ok, out) = run(
+        koma(),
+        &[
+            "render",
+            koma_file.to_str().unwrap(),
+            "--out",
+            png.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "render failed: {out}");
+    assert!(out.contains("in Abstract environment"), "out: {out}");
+    assert!(png.exists(), "expected png");
+}
+
 // Keep `Path` import used on all platforms (Windows paths differ).
 #[allow(dead_code)]
 fn _path_takes_ref(_p: &Path) {}

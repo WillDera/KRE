@@ -8,6 +8,7 @@ use std::io::{Read, Seek};
 use std::path::Path;
 
 use koma_core::kir::Chapter;
+use koma_scene::Scene;
 use koma_theme::Theme;
 
 use crate::manifest::{KOMA_FORMAT, KOMA_PACKAGE_VERSION, MANIFEST_PATH, PackageManifest};
@@ -22,8 +23,12 @@ pub enum PackageError {
     InvalidManifest(String),
     #[error("chapter `{0}` not found")]
     ChapterNotFound(String),
+    #[error("scene `{0}` not found")]
+    SceneNotFound(String),
     #[error("theme error: {0}")]
     Theme(String),
+    #[error("scene error: {0}")]
+    Scene(String),
     #[error("KIR decode error: {0}")]
     Decode(#[from] prost::DecodeError),
     #[error("zip error: {0}")]
@@ -145,6 +150,23 @@ impl<R: Read + Seek> KomaPackage<R> {
             .map_err(|e| PackageError::Theme(e.to_string()))
     }
 
+    /// Lazily load the scene for a chapter by id.
+    pub fn scene(&mut self, id: &str) -> Result<Scene, PackageError> {
+        let path = self
+            .manifest
+            .scenes
+            .iter()
+            .find(|s| s.id == id)
+            .map(|s| s.path.clone())
+            .ok_or_else(|| PackageError::SceneNotFound(id.to_owned()))?;
+        let bytes = self.read_file(&path)?;
+        Scene::parse_json(&bytes).map_err(|e| PackageError::Scene(e.to_string()))
+    }
+
+    pub fn scene_count(&self) -> usize {
+        self.manifest.scenes.len()
+    }
+
     pub(crate) fn read_file(&mut self, path: &str) -> Result<Vec<u8>, PackageError> {
         let mut f = self.archive.by_name(path)?;
         let mut buf = Vec::new();
@@ -204,7 +226,7 @@ mod tests {
             chapters: Vec::new(),
             assets: Vec::new(),
             theme: None,
-            scene: None,
+            scenes: Vec::new(),
         };
         let mut buf = Cursor::new(Vec::new());
         {

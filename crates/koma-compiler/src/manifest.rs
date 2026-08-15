@@ -19,10 +19,11 @@ pub struct PackageManifest {
     pub document: DocumentInfo,
     pub chapters: Vec<ChapterEntry>,
     pub assets: Vec<AssetEntry>,
-    /// Theme information path (theme engine, Phase 5).
+    /// Theme information path (theme engine).
     pub theme: Option<String>,
-    /// Scene data path (scene graph, Phase 6).
-    pub scene: Option<String>,
+    /// Per-chapter scene graphs (lazily loaded like chapters).
+    #[serde(default)]
+    pub scenes: Vec<SceneEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -73,5 +74,16 @@ pub struct AssetEntry {
     /// Zip path, `Some` when bytes are embedded in the package.
     pub path: Option<String>,
     pub mime: Option<String>,
+    pub bytes: usize,
+}
+
+/// One scene in the package; the runtime loads these lazily.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SceneEntry {
+    /// Chapter id this scene presents.
+    pub id: String,
+    /// Zip path of the JSON-encoded scene.
+    pub path: String,
+    /// Encoded scene size in bytes.
     pub bytes: usize,
 }

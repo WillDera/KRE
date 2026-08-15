@@ -5,6 +5,7 @@ use std::io::{Seek, Write};
 
 use koma_core::error::validate_version;
 use koma_core::kir::{Document, block};
+use koma_scene::default_scene_for_chapter;
 use koma_theme::Theme;
 use prost::Message as _;
 use zip::write::FileOptions;
@@ -12,7 +13,7 @@ use zip::{CompressionMethod, ZipWriter};
 
 use crate::manifest::{
     AssetEntry, ChapterEntry, DocumentInfo, GeneratorInfo, IdentifierInfo, KOMA_FORMAT,
-    KOMA_PACKAGE_VERSION, LicenseInfo, PackageManifest,
+    KOMA_PACKAGE_VERSION, LicenseInfo, PackageManifest, SceneEntry,
 };
 
 /// Zip entry containing the embedded theme (presentation truth).
@@ -24,6 +25,8 @@ pub enum CompileError {
     InvalidDocument(String),
     #[error("invalid theme: {0}")]
     Theme(String),
+    #[error("scene error: {0}")]
+    Scene(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("zip error: {0}")]
@@ -74,6 +77,9 @@ impl KomaCompiler {
             .map(|t| t.to_yaml())
             .transpose()
             .map_err(|e| CompileError::Theme(e.to_string()))?;
+        // Scenes are always generated; without a theme we synthesize against
+        // a neutral default so environments still carry sane presentation.
+        let scene_theme = theme.cloned().unwrap_or_else(|| Theme::minimal("default"));
 
         // Pre-encode chapters (also yields sizes for the manifest) and
         // validate entry ids against path traversal.
@@ -86,6 +92,27 @@ impl KomaCompiler {
                 .map_err(|e| CompileError::InvalidDocument(e.to_string()))?;
             chapters.push((id, buf));
         }
+
+        // Scene generation (compiler responsibility): one deterministic scene
+        // per chapter.
+        let scenes: Vec<(String, Vec<u8>)> = document
+            .chapters
+            .iter()
+            .map(|chapter| {
+                let id = sanitize_id(&chapter.id)?;
+                let blocks: Vec<_> = chapter
+                    .sections
+                    .iter()
+                    .flat_map(|s| s.blocks.iter())
+                    .cloned()
+                    .collect();
+                let scene = default_scene_for_chapter(&id, &scene_theme, &blocks);
+                let json = scene
+                    .to_json()
+                    .map_err(|e| CompileError::Scene(e.to_string()))?;
+                Ok((id, json.into_bytes()))
+            })
+            .collect::<Result<Vec<_>, CompileError>>()?;
 
         // Asset section: every media id referenced by the document; embed
         // bytes only when provided by the caller.
@@ -124,7 +151,14 @@ impl KomaCompiler {
                 })
                 .collect(),
             theme: theme_yaml.as_ref().map(|_| THEME_PATH.to_owned()),
-            scene: None,
+            scenes: scenes
+                .iter()
+                .map(|(id, buf)| SceneEntry {
+                    id: id.clone(),
+                    path: scene_path(id),
+                    bytes: buf.len(),
+                })
+                .collect(),
         };
 
         let manifest_json = serde_json::to_string_pretty(&manifest)
@@ -150,6 +184,12 @@ impl KomaCompiler {
             zip.write_all(yaml.as_bytes())?;
         }
 
+        // Scenes in chapter order for determinism.
+        for (id, json) in &scenes {
+            zip.start_file(scene_path(id), entry_options())?;
+            zip.write_all(json)?;
+        }
+
         zip.finish()?;
         Ok(manifest)
     }
@@ -168,6 +208,10 @@ fn chapter_path(id: &str) -> String {
 
 fn asset_path(id: &str) -> String {
     format!("assets/{id}")
+}
+
+fn scene_path(id: &str) -> String {
+    format!("scenes/{id}.json")
 }
 
 fn document_info(document: &Document) -> DocumentInfo {
@@ -251,7 +295,7 @@ mod tests {
     use koma_core::kir::{Block, Chapter, TextSpan, block};
 
     use super::*;
-    use crate::package::KomaPackage;
+    use crate::package::{KomaPackage, PackageError};
 
     fn sample_document() -> Document {
         let mut doc = Document::new();
@@ -454,5 +498,42 @@ colors:
         let mut pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
         assert!(pkg.manifest().theme.is_none());
         assert!(pkg.theme().expect("ok").is_none());
+    }
+
+    #[test]
+    fn embeds_scenes_per_chapter() {
+        let doc = sample_document();
+        let bytes = compile_to(&doc, &HashMap::new());
+        let pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
+
+        let manifest = pkg.manifest();
+        assert_eq!(manifest.scenes.len(), doc.chapters.len());
+        for entry in &manifest.scenes {
+            assert!(entry.path.starts_with("scenes/"));
+            assert!(entry.path.ends_with(".json"));
+            assert!(entry.bytes > 0);
+        }
+    }
+
+    #[test]
+    fn scenes_load_lazily_and_are_valid() {
+        let doc = sample_document();
+        let bytes = compile_to(&doc, &HashMap::new());
+        let mut pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
+
+        let scene = pkg.scene("ch1").expect("scene");
+        scene.validate().expect("valid scene");
+        assert_eq!(scene.chapter_id, "ch1");
+
+        let err = pkg.scene("nope").expect_err("missing scene");
+        assert!(matches!(err, PackageError::SceneNotFound(_)));
+    }
+
+    #[test]
+    fn scene_synthesis_is_deterministic_in_package() {
+        let doc = sample_document();
+        let a = compile_to(&doc, &HashMap::new());
+        let b = compile_to(&doc, &HashMap::new());
+        assert_eq!(a, b);
     }
 }
