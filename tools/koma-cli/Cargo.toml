@@ -1,0 +1,21 @@
+[package]
+name = "koma-cli"
+description = "Koma Rendering Engine developer toolchain."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "koma"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+koma-compiler = { path = "../../crates/koma-compiler" }
+koma-core = { path = "../../crates/koma-core" }
+koma-epub = { path = "../../crates/koma-adapters/koma-epub" }
+
+[dev-dependencies]
+tempfile = "3"
+zip = { version = "2", default-features = false, features = ["deflate"] }

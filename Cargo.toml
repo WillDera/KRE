@@ -3,6 +3,8 @@ resolver = "2"
 members = [
     "crates/koma-core",
     "crates/koma-adapters/koma-epub",
+    "crates/koma-compiler",
+    "tools/koma-cli",
 ]
 
 [workspace.package]

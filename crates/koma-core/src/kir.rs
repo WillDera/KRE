@@ -22,6 +22,28 @@ impl Document {
             chapters: Vec::new(),
         }
     }
+
+    /// Encode this document to protobuf bytes (network / file transfer).
+    pub fn encode_document(&self) -> Result<Vec<u8>, EncodeError> {
+        let mut buf = Vec::new();
+        prost::Message::encode(self, &mut buf)?;
+        Ok(buf)
+    }
+
+    /// Decode a document from protobuf bytes.
+    pub fn decode_document(bytes: &[u8]) -> Result<Self, KirError> {
+        Ok(prost::Message::decode(bytes)?)
+    }
+
+    /// Plain-text representation of the whole document (accessibility /
+    /// text-extraction path; presentation is a separate concern).
+    pub fn plain_text(&self) -> String {
+        self.chapters
+            .iter()
+            .map(Chapter::plain_text)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 impl Chapter {
@@ -36,6 +58,51 @@ impl Chapter {
     pub fn decode_chapter(bytes: &[u8]) -> Result<Self, KirError> {
         Ok(prost::Message::decode(bytes)?)
     }
+
+    /// Plain-text representation (headings/paragraphs separated by newlines).
+    pub fn plain_text(&self) -> String {
+        let mut out = String::new();
+        if let Some(title) = &self.title {
+            out.push_str(title);
+            out.push('\n');
+        }
+        for section in &self.sections {
+            for block in &section.blocks {
+                out.push_str(&block.plain_text());
+                out.push('\n');
+            }
+        }
+        out
+    }
+}
+
+impl Block {
+    /// Plain-text representation of a block.
+    pub fn plain_text(&self) -> String {
+        match &self.kind {
+            Some(block::Kind::Paragraph(p)) => spans_text(&p.spans),
+            Some(block::Kind::Heading(h)) => spans_text(&h.spans),
+            Some(block::Kind::Quote(q)) => q
+                .content
+                .iter()
+                .map(Block::plain_text)
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Some(block::Kind::List(l)) => l
+                .items
+                .iter()
+                .map(|b| format!("- {}", b.plain_text()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            Some(block::Kind::Image(i)) => i.alt.clone().unwrap_or_default(),
+            Some(block::Kind::Media(m)) => m.caption.clone().unwrap_or_default(),
+            None => String::new(),
+        }
+    }
+}
+
+fn spans_text(spans: &[TextSpan]) -> String {
+    spans.iter().map(|s| s.text.clone()).collect()
 }
 
 /// Build a paragraph from a plain text string (single span, no metadata).
