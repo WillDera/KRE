@@ -4,6 +4,7 @@ members = [
     "crates/koma-core",
     "crates/koma-adapters/koma-epub",
     "crates/koma-compiler",
+    "crates/koma-renderer",
     "tools/koma-cli",
 ]
 

@@ -6,6 +6,7 @@
 //! koma inspect book.koma          # package metadata + chapter index
 //! koma validate book.koma         # decode every chapter, report errors
 //! koma preview book.koma          # plain-text chapter preview
+//! koma render book.koma           # render a chapter to PNG (Phase 4)
 //! ```
 
 use std::collections::HashMap;
@@ -17,7 +18,8 @@ use clap::{Parser, Subcommand};
 use koma_compiler::{KomaCompiler, KomaPackage};
 use koma_core::adapters::{ContentAdapter, ContentSource};
 use koma_core::error::validate_version;
-use koma_core::kir::{Document, KIR_VERSION};
+use koma_core::kir::{Block, Document, KIR_VERSION, block};
+use koma_renderer::{LayoutConfig, SoftwareBackend};
 
 #[derive(Parser)]
 #[command(name = "koma", version, about = "Koma Rendering Engine toolchain")]
@@ -52,6 +54,18 @@ enum Command {
         #[arg(long, help = "chapter id (default: first chapter)")]
         chapter: Option<String>,
     },
+    /// Render a chapter to a PNG frame with the software backend (Phase 4).
+    Render {
+        package: PathBuf,
+        #[arg(long, help = "chapter id (default: first chapter)")]
+        chapter: Option<String>,
+        #[arg(long, default_value = "chapter.png", help = "output PNG path")]
+        out: PathBuf,
+        #[arg(long, default_value_t = 900, help = "frame width in pixels")]
+        width: u32,
+        #[arg(long, default_value_t = 1200, help = "frame height in pixels")]
+        height: u32,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -64,6 +78,13 @@ fn main() -> anyhow::Result<()> {
         Command::Inspect { package } => cmd_inspect(&package),
         Command::Validate { package } => cmd_validate(&package),
         Command::Preview { package, chapter } => cmd_preview(&package, chapter.as_deref()),
+        Command::Render {
+            package,
+            chapter,
+            out,
+            width,
+            height,
+        } => cmd_render(&package, chapter.as_deref(), &out, width, height),
     }
 }
 
@@ -174,6 +195,68 @@ fn cmd_preview(path: &Path, chapter: Option<&str>) -> anyhow::Result<()> {
         .chapter(&id)
         .with_context(|| format!("loading chapter `{id}`"))?;
     print!("{}", ch.plain_text());
+    Ok(())
+}
+
+fn cmd_render(
+    path: &Path,
+    chapter: Option<&str>,
+    out: &Path,
+    width: u32,
+    height: u32,
+) -> anyhow::Result<()> {
+    let mut pkg =
+        KomaPackage::open_file(path).with_context(|| format!("opening {}", path.display()))?;
+    let id = match chapter {
+        Some(id) => id.to_owned(),
+        None => pkg.chapter_ids().next().unwrap_or_default().to_owned(),
+    };
+    let ch = pkg
+        .chapter(&id)
+        .with_context(|| format!("loading chapter `{id}`"))?;
+
+    // Prepend the chapter title as a heading so it appears in the frame.
+    let mut blocks = Vec::new();
+    if let Some(title) = &ch.title {
+        blocks.push(Block {
+            kind: Some(block::Kind::Heading(koma_core::kir::Heading {
+                level: 1,
+                spans: vec![koma_core::kir::TextSpan {
+                    text: title.clone(),
+                    language: None,
+                    style: None,
+                }],
+            })),
+        });
+    }
+    for section in &ch.sections {
+        blocks.extend(section.blocks.iter().cloned());
+    }
+
+    let cfg = LayoutConfig {
+        width,
+        height,
+        ..Default::default()
+    };
+    let mut backend = SoftwareBackend::new();
+    let frame = backend
+        .render_blocks(&blocks, &cfg)
+        .context("rendering chapter")?;
+
+    let file = fs::File::create(out).with_context(|| format!("creating {}", out.display()))?;
+    let mut encoder = png::Encoder::new(file, frame.width, frame.height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().context("writing PNG header")?;
+    writer
+        .write_image_data(&frame.pixels)
+        .context("writing PNG pixels")?;
+    println!(
+        "rendered chapter `{id}` ({}x{}) -> {}",
+        frame.width,
+        frame.height,
+        out.display()
+    );
     Ok(())
 }
 
