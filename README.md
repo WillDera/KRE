@@ -107,6 +107,12 @@ HTTP API.
 |---|---|
 | CLI reference | [`docs/koma-cli.md`](docs/koma-cli.md) |
 
+### Internals
+
+| Guide | Path |
+|---|---|
+| How the engine works | [`docs/engine-internals.md`](docs/engine-internals.md) |
+
 ## Design pillars
 
 - **Source independence** — the renderer only consumes KIR; adapters are
