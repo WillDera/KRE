@@ -1,0 +1,26 @@
+[package]
+name = "koma-server"
+description = "Koma network service: language-independent HTTP integration API (Phase 8)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+koma-compiler = { path = "../koma-compiler" }
+koma-core = { path = "../koma-core" }
+koma-epub = { path = "../koma-adapters/koma-epub" }
+koma-renderer = { path = "../koma-renderer" }
+koma-scene = { path = "../koma-scene" }
+koma-theme = { path = "../koma-theme" }
+png = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }

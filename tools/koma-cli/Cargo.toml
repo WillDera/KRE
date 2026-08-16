@@ -16,8 +16,10 @@ koma-compiler = { path = "../../crates/koma-compiler" }
 koma-core = { path = "../../crates/koma-core" }
 koma-epub = { path = "../../crates/koma-adapters/koma-epub" }
 koma-renderer = { path = "../../crates/koma-renderer" }
+koma-server = { path = "../../crates/koma-server" }
 koma-theme = { path = "../../crates/koma-theme" }
 png = "0.17"
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [dev-dependencies]
 tempfile = "3"

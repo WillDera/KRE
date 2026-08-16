@@ -86,6 +86,18 @@ enum Command {
         )]
         backend: String,
     },
+    /// Serve the Koma network service over HTTP (Phase 8).
+    ///
+    /// Endpoints: POST /compile/book, POST /render/document,
+    /// POST /session/open, GET /scene/state.
+    Serve {
+        #[arg(
+            long,
+            default_value = "127.0.0.1:7878",
+            help = "bind address for the HTTP service"
+        )]
+        addr: String,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -118,6 +130,7 @@ fn main() -> anyhow::Result<()> {
             theme.as_deref(),
             &backend,
         ),
+        Command::Serve { addr } => cmd_serve(&addr),
     }
 }
 
@@ -374,6 +387,13 @@ fn cmd_render(
         backend,
         out.display()
     );
+    Ok(())
+}
+
+fn cmd_serve(addr: &str) -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new().context("creating tokio runtime")?;
+    println!("koma serve listening on http://{addr}");
+    rt.block_on(koma_server::serve(addr.to_owned()))?;
     Ok(())
 }
 

@@ -6,6 +6,7 @@ members = [
     "crates/koma-compiler",
     "crates/koma-renderer",
     "crates/koma-scene",
+    "crates/koma-server",
     "crates/koma-theme",
     "tools/koma-cli",
 ]
