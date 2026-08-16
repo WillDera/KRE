@@ -13,3 +13,6 @@ koma-scene = { path = "../koma-scene" }
 koma-theme = { path = "../koma-theme" }
 swash = "0.2"
 thiserror = "2"
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "vulkan", "wgsl"] }
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"

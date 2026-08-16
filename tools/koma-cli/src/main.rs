@@ -78,6 +78,13 @@ enum Command {
             help = "theme YAML override (default: package theme or defaults)"
         )]
         theme: Option<PathBuf>,
+        #[arg(
+            long,
+            default_value = "software",
+            value_parser = ["software", "gpu"],
+            help = "rendering backend (gpu falls back to software when unavailable)"
+        )]
+        backend: String,
     },
 }
 
@@ -101,6 +108,7 @@ fn main() -> anyhow::Result<()> {
             width,
             height,
             theme,
+            backend,
         } => cmd_render(
             &package,
             chapter.as_deref(),
@@ -108,6 +116,7 @@ fn main() -> anyhow::Result<()> {
             width,
             height,
             theme.as_deref(),
+            &backend,
         ),
     }
 }
@@ -262,6 +271,7 @@ fn cmd_render(
     width: u32,
     height: u32,
     theme_path: Option<&Path>,
+    backend: &str,
 ) -> anyhow::Result<()> {
     let mut pkg =
         KomaPackage::open_file(path).with_context(|| format!("opening {}", path.display()))?;
@@ -324,10 +334,26 @@ fn cmd_render(
     } else {
         layout_config_from_scene(&scene, &cfg)
     };
-    let mut backend = SoftwareBackend::new();
-    let frame = backend
-        .render_blocks(&blocks, &cfg)
-        .context("rendering chapter")?;
+    let mut software = SoftwareBackend::new();
+    let frame = match backend {
+        // GPU requested: try it, fall back to software when unavailable
+        // (AGENTS.md failure handling — rendering must never fail because an
+        // optional backend is missing).
+        "gpu" => match koma_renderer::WgpuBackend::new() {
+            Ok(mut gpu) => gpu
+                .render_blocks(&blocks, &cfg)
+                .context("rendering chapter with GPU backend")?,
+            Err(e) => {
+                println!("gpu backend unavailable ({e}); falling back to software");
+                software
+                    .render_blocks(&blocks, &cfg)
+                    .context("rendering chapter with software backend")?
+            }
+        },
+        _ => software
+            .render_blocks(&blocks, &cfg)
+            .context("rendering chapter with software backend")?,
+    };
 
     let file = fs::File::create(out).with_context(|| format!("creating {}", out.display()))?;
     let mut encoder = png::Encoder::new(file, frame.width, frame.height);
@@ -338,13 +364,14 @@ fn cmd_render(
         .write_image_data(&frame.pixels)
         .context("writing PNG pixels")?;
     println!(
-        "rendered chapter `{id}` ({}x{}){} -> {}",
+        "rendered chapter `{id}` ({}x{}){} via {} -> {}",
         frame.width,
         frame.height,
         match &theme {
             Some(t) => format!(" with theme `{}`", t.name),
             None => format!(" in {:?} environment", scene.environment.kind),
         },
+        backend,
         out.display()
     );
     Ok(())

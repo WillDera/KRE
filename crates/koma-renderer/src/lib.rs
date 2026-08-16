@@ -11,6 +11,7 @@
 //! Backend options per AGENTS.md: wgpu / Vulkan / Metal / WebGPU / software.
 
 pub mod backend;
+pub mod gpu;
 pub mod layout;
 pub mod scene;
 pub mod software;
@@ -24,3 +25,5 @@ pub use layout::{LayoutConfig, PlacedGlyph, PlacedLine, layout_blocks};
 pub use scene::layout_config_from_scene;
 pub use software::SoftwareBackend;
 pub use theme::layout_config_from_theme;
+
+pub use gpu::WgpuBackend;

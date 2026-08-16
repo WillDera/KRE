@@ -254,6 +254,34 @@ fn scenes_are_compiled_inspected_and_used_by_render() {
     assert!(png.exists(), "expected png");
 }
 
+#[test]
+fn gpu_backend_renders_or_falls_back_gracefully() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let epub = dir.path().join("book.epub");
+    std::fs::write(&epub, minimal_epub()).expect("write epub");
+    let koma_file = dir.path().join("book.koma");
+    let (ok, out) = run(koma(), &["compile", epub.to_str().unwrap()]);
+    assert!(ok, "compile failed: {out}");
+
+    // --backend gpu either uses the GPU or falls back to software, but always
+    // produces a PNG (AGENTS.md failure handling).
+    let png = dir.path().join("page.png");
+    let (ok, out) = run(
+        koma(),
+        &[
+            "render",
+            koma_file.to_str().unwrap(),
+            "--backend",
+            "gpu",
+            "--out",
+            png.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "render failed: {out}");
+    assert!(out.contains("via gpu"), "out: {out}");
+    assert!(png.exists(), "expected png");
+}
+
 // Keep `Path` import used on all platforms (Windows paths differ).
 #[allow(dead_code)]
 fn _path_takes_ref(_p: &Path) {}
