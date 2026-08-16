@@ -1,5 +1,8 @@
 # Integrating KRE with Flutter (epubx)
 
+> Related guides: [Flutter with epub_pro](flutter-epub-pro-integration.md)
+> · [Rust app with rbook](rust-rbook-integration.md).
+
 Koma Rendering Engine (KRE) is a Rust engine; Flutter apps are Dart. The
 integration point designed for external software is the **Koma network
 service** (AGENTS.md: Integration API) — a language-independent HTTP API
