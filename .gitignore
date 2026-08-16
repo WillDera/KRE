@@ -15,3 +15,6 @@ graphify-out/
 *.swo
 
 # Build artifacts (protoc-generated code lives in target/ via OUT_DIR)
+# Internal working docs (not part of the public repo)
+AGENTS.md
+DESIGN.md
