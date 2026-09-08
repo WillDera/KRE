@@ -16,6 +16,7 @@ koma-compiler = { path = "../../crates/koma-compiler" }
 koma-core = { path = "../../crates/koma-core" }
 koma-analysis = { path = "../../crates/koma-analysis" }
 koma-epub = { path = "../../crates/koma-adapters/koma-epub" }
+koma-markdown = { path = "../../crates/koma-adapters/koma-markdown" }
 koma-renderer = { path = "../../crates/koma-renderer" }
 koma-server = { path = "../../crates/koma-server" }
 koma-theme = { path = "../../crates/koma-theme" }

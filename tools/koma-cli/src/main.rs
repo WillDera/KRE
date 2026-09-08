@@ -466,8 +466,13 @@ fn import_document(input: &Path) -> anyhow::Result<Document> {
             let source = ContentSource::new(input.to_string_lossy().into_owned());
             Ok(adapter.to_kir(&source)?)
         }
+        "md" | "markdown" => {
+            let adapter = koma_markdown::MarkdownAdapter;
+            let source = ContentSource::new(input.to_string_lossy().into_owned());
+            Ok(adapter.to_kir(&source)?)
+        }
         "kir" => read_kir(input),
-        other => anyhow::bail!("unsupported input `.{other}` (expected .epub or .kir)"),
+        other => anyhow::bail!("unsupported input `.{other}` (expected .epub, .md, .markdown, or .kir)"),
     }
 }
 

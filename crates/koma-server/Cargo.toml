@@ -11,6 +11,7 @@ axum = "0.8"
 koma-compiler = { path = "../koma-compiler" }
 koma-core = { path = "../koma-core" }
 koma-epub = { path = "../koma-adapters/koma-epub" }
+koma-markdown = { path = "../koma-adapters/koma-markdown" }
 koma-renderer = { path = "../koma-renderer" }
 koma-scene = { path = "../koma-scene" }
 koma-theme = { path = "../koma-theme" }

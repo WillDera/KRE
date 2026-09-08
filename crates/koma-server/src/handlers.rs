@@ -40,7 +40,8 @@ fn default_backend() -> String {
 /// Query parameters for `POST /compile/book`.
 #[derive(Debug, Deserialize)]
 pub struct CompileQuery {
-    /// `auto` (default) | `epub` | `kir`. `auto` tries KIR, then EPUB.
+    /// `auto` (default) | `epub` | `kir` | `markdown` / `md`.
+    /// `auto` tries KIR, then EPUB, then Markdown UTF-8.
     #[serde(default = "default_format")]
     pub format: String,
     /// Optional theme as a YAML string.
@@ -86,13 +87,17 @@ pub async fn compile_book(Query(q): Query<CompileQuery>, body: Bytes) -> Result<
     let doc = match q.format.as_str() {
         "kir" => parse_kir(&body)?,
         "epub" => parse_epub(&body)?,
+        "markdown" | "md" => parse_markdown(&body)?,
         "auto" | "" => match parse_kir(&body) {
             Ok(doc) => doc,
-            Err(_) => parse_epub(&body)?,
+            Err(_) => match parse_epub(&body) {
+                Ok(doc) => doc,
+                Err(_) => parse_markdown(&body)?,
+            },
         },
         other => {
             return Err(ApiError::bad_request(format!(
-                "unknown format `{other}` (expected auto | epub | kir)"
+                "unknown format `{other}` (expected auto | epub | kir | markdown)"
             )));
         }
     };
@@ -238,6 +243,15 @@ fn parse_epub(bytes: &[u8]) -> Result<Document, ApiError> {
     koma_epub::EpubAdapter
         .to_kir(&source)
         .map_err(|e| ApiError::bad_request(format!("EPUB parse failed: {e}")))
+}
+
+/// Adapt Markdown UTF-8 bytes.
+fn parse_markdown(bytes: &[u8]) -> Result<Document, ApiError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|e| ApiError::bad_request(format!("markdown must be UTF-8: {e}")))?;
+    koma_markdown::MarkdownAdapter
+        .to_kir_str(text, "upload.md")
+        .map_err(|e| ApiError::bad_request(format!("markdown parse failed: {e}")))
 }
 
 fn parse_optional_theme(yaml: Option<&str>) -> Result<Option<Theme>, ApiError> {

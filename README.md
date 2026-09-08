@@ -42,9 +42,12 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 10 | Selection / highlight / annotation polish | `koma-renderer` | done |
 | 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | done |
 | 12 | Genre-based typography (theme v0.2) | `koma-theme`, `koma-renderer` | done |
+| 13 | Markdown adapter | `koma-markdown` | done |
 
 Roadmap (not started, tracked outside phases):
 
+- **Runtime host** — sessions, lazy chapter window, user-state store.
+- **NRP / Content API v0.1** — narrative render protocol surface over HTTP.
 - **External assisted compilation backends** — optional model backends behind
   `AssistedAnalyzer` with mandatory rule-based fallback (compile-time only).
 - **GPU decoration parity polish** — richer ornament primitives beyond fill_rect
@@ -56,6 +59,7 @@ Roadmap (not started, tracked outside phases):
 |---|---|
 | `crates/koma-core` | shared types, KIR (protobuf), errors, plugin interfaces |
 | `crates/koma-adapters/koma-epub` | EPUB → KIR content adapter |
+| `crates/koma-adapters/koma-markdown` | Markdown → KIR content adapter |
 | `crates/koma-analysis` | rule-based semantic analysis (compile-time) |
 | `crates/koma-compiler` | KIR → `.koma` packages (optimization, scenes, assets) |
 | `crates/koma-scene` | scene graph model + deterministic synthesis |

@@ -173,6 +173,23 @@ async fn compile_epub_autodetect_returns_koma_package() {
 }
 
 #[tokio::test]
+async fn compile_markdown_returns_koma_package() {
+    let app = router();
+    let md = b"---\ntitle: Snow\n---\n\n# Arrival\n\nA cold coming.\n\n# Departure\n\nGone.\n";
+    let (status, body) = request(
+        &app,
+        "POST",
+        "/compile/book",
+        "format=markdown",
+        md.to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "body: {body:?}");
+    let pkg = KomaPackage::open(std::io::Cursor::new(body.as_slice())).expect("open package");
+    assert_eq!(pkg.chapter_count(), 2);
+}
+
+#[tokio::test]
 async fn compile_rejects_garbage() {
     let app = router();
     let (status, body) = request(
