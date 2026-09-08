@@ -4,8 +4,10 @@ use std::collections::HashMap;
 use std::io::{Cursor, Write};
 
 use axum::Json;
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::Response;
 use koma_compiler::{KomaCompiler, KomaPackage};
 use koma_core::adapters::{ContentAdapter, ContentSource};
 use koma_core::kir::{Block, Chapter, Document, block};
@@ -58,6 +60,9 @@ pub struct RenderQuery {
     pub backend: String,
     /// Optional theme override as a YAML string.
     pub theme: Option<String>,
+    /// 0-based page to render (default 0). The response carries the total
+    /// page count in the `X-Koma-Pages` header.
+    pub page: Option<usize>,
 }
 
 /// Query parameters for `GET /scene/state`.
@@ -100,8 +105,12 @@ pub async fn compile_book(Query(q): Query<CompileQuery>, body: Bytes) -> Result<
     Ok(Bytes::from(out.into_inner()))
 }
 
-/// `POST /render/document` — body: `.koma` bytes. Returns a PNG frame.
-pub async fn render_document(Query(q): Query<RenderQuery>, body: Bytes) -> Result<Bytes, ApiError> {
+/// `POST /render/document` — body: `.koma` bytes. Returns the requested page
+/// as a PNG, with the total page count in `X-Koma-Pages`.
+pub async fn render_document(
+    Query(q): Query<RenderQuery>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
     let mut pkg = KomaPackage::open(Cursor::new(body.as_ref()))
         .map_err(|e| ApiError::bad_request(format!("not a .koma package: {e}")))?;
 
@@ -143,9 +152,23 @@ pub async fn render_document(Query(q): Query<RenderQuery>, body: Bytes) -> Resul
         cfg = layout_config_from_scene(&scene, &cfg);
     }
 
-    let frame = render_frame(&blocks, &cfg, &q.backend)?;
-    let png = encode_png(&frame)?;
-    Ok(Bytes::from(png))
+    let frames = render_pages(&blocks, &cfg, &q.backend)?;
+    let page = q.page.unwrap_or(0);
+    let frame = frames.get(page).ok_or_else(|| {
+        ApiError::bad_request(format!(
+            "page {page} out of range (chapter has {} page{s})",
+            frames.len(),
+            s = if frames.len() == 1 { "" } else { "s" },
+        ))
+    })?;
+    let png = encode_png(frame)?;
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "image/png")
+        .header("x-koma-pages", frames.len().to_string())
+        .body(Body::from(png))
+        .map_err(|e| ApiError::internal(format!("building response: {e}")))?;
+    Ok(response)
 }
 
 /// `POST /session/open` — body: `.koma` bytes. Returns a session id.
@@ -231,22 +254,27 @@ fn parse_optional_theme(yaml: Option<&str>) -> Result<Option<Theme>, ApiError> {
     }
 }
 
-/// Render a chapter's blocks to a frame with the requested backend.
-fn render_frame(blocks: &[Block], cfg: &LayoutConfig, backend: &str) -> Result<Frame, ApiError> {
+/// Paginate a chapter's blocks and render every page with the requested
+/// backend. Returns `(frames, page_count)`.
+fn render_pages(
+    blocks: &[Block],
+    cfg: &LayoutConfig,
+    backend: &str,
+) -> Result<Vec<Frame>, ApiError> {
     let mut software = SoftwareBackend::new();
     match backend {
         "gpu" => match koma_renderer::WgpuBackend::new() {
             Ok(mut gpu) => gpu
-                .render_blocks(blocks, cfg)
+                .render_paginated(blocks, cfg)
                 .map_err(|e| ApiError::internal(format!("gpu render failed: {e}"))),
-            Err(e) => software.render_blocks(blocks, cfg).map_err(|err| {
+            Err(e) => software.render_paginated(blocks, cfg).map_err(|err| {
                 ApiError::internal(format!(
                     "gpu unavailable ({e}) and software fallback failed: {err}"
                 ))
             }),
         },
         "software" => software
-            .render_blocks(blocks, cfg)
+            .render_paginated(blocks, cfg)
             .map_err(|e| ApiError::internal(format!("render failed: {e}"))),
         other => Err(ApiError::bad_request(format!(
             "unknown backend `{other}` (expected software | gpu)"

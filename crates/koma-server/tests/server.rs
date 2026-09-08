@@ -117,6 +117,17 @@ async fn request(
     query: &str,
     body: Vec<u8>,
 ) -> (StatusCode, Vec<u8>) {
+    let (status, _, bytes) = request_full(app, method, path, query, body).await;
+    (status, bytes)
+}
+
+async fn request_full(
+    app: &Router,
+    method: &str,
+    path: &str,
+    query: &str,
+    body: Vec<u8>,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
     let uri = if query.is_empty() {
         path.to_owned()
     } else {
@@ -130,6 +141,7 @@ async fn request(
         .expect("build request");
     let resp = app.clone().oneshot(req).await.expect("oneshot");
     let status = resp.status();
+    let headers = resp.headers().clone();
     let bytes = resp
         .into_body()
         .collect()
@@ -137,7 +149,7 @@ async fn request(
         .expect("collect")
         .to_bytes()
         .to_vec();
-    (status, bytes)
+    (status, headers, bytes)
 }
 
 #[tokio::test]
@@ -193,6 +205,84 @@ async fn render_document_returns_png() {
     assert_eq!(status, StatusCode::OK, "png bytes len {}", png.len());
     assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n", "PNG magic");
     assert!(png.len() > 8);
+}
+
+/// A document long enough to paginate at small render sizes.
+fn long_doc() -> Vec<u8> {
+    let mut doc = sample_doc();
+    let section = Section {
+        id: "s1".to_owned(),
+        blocks: (0..40)
+            .map(|i| Block {
+                kind: Some(block::Kind::Paragraph(Paragraph {
+                    spans: vec![TextSpan {
+                        text: format!(
+                            "Paragraph number {i}. The inquisitor crossed the silent chamber, frost clinging to the walls."
+                        ),
+                        language: None,
+                        style: None,
+                    }],
+                    annotations: vec![],
+                    semantic: None,
+                    style_id: None,
+                })),
+            })
+            .collect(),
+    };
+    doc.chapters[0].sections = vec![section];
+    doc.encode_document().expect("encode KIR")
+}
+
+#[tokio::test]
+async fn render_document_paginates_and_exposes_page_count() {
+    let app = router();
+    let (status, pkg) = request(&app, "POST", "/compile/book", "format=kir", long_doc()).await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Default page 0 returns the first page and the total count.
+    let (status, headers, png) = request_full(
+        &app,
+        "POST",
+        "/render/document",
+        "width=120&height=120",
+        pkg.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let pages: usize = headers
+        .get("x-koma-pages")
+        .expect("x-koma-pages header")
+        .to_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(pages >= 2, "long chapter must paginate, got {pages}");
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+
+    // Request the last page explicitly.
+    let last = pages - 1;
+    let (status, _, png_last) = request_full(
+        &app,
+        "POST",
+        "/render/document",
+        &format!("width=120&height=120&page={last}"),
+        pkg,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(&png_last[..8], b"\x89PNG\r\n\x1a\n");
+
+    // Out-of-range page is a 400.
+    let (_, pkg) = request(&app, "POST", "/compile/book", "format=kir", long_doc()).await;
+    let (status, _) = request(
+        &app,
+        "POST",
+        "/render/document",
+        &format!("width=120&height=120&page={}", pages + 5),
+        pkg,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

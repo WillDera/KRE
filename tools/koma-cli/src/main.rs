@@ -20,7 +20,7 @@ use koma_core::adapters::{ContentAdapter, ContentSource};
 use koma_core::error::validate_version;
 use koma_core::kir::{Block, Document, KIR_VERSION, block};
 use koma_renderer::{
-    LayoutConfig, SoftwareBackend, layout_config_from_scene, layout_config_from_theme,
+    Frame, LayoutConfig, SoftwareBackend, layout_config_from_scene, layout_config_from_theme,
 };
 use koma_theme::Theme;
 
@@ -348,26 +348,66 @@ fn cmd_render(
         layout_config_from_scene(&scene, &cfg)
     };
     let mut software = SoftwareBackend::new();
-    let frame = match backend {
+    let frames = match backend {
         // GPU requested: try it, fall back to software when unavailable
         // (AGENTS.md failure handling — rendering must never fail because an
         // optional backend is missing).
         "gpu" => match koma_renderer::WgpuBackend::new() {
             Ok(mut gpu) => gpu
-                .render_blocks(&blocks, &cfg)
+                .render_paginated(&blocks, &cfg)
                 .context("rendering chapter with GPU backend")?,
             Err(e) => {
                 println!("gpu backend unavailable ({e}); falling back to software");
                 software
-                    .render_blocks(&blocks, &cfg)
+                    .render_paginated(&blocks, &cfg)
                     .context("rendering chapter with software backend")?
             }
         },
         _ => software
-            .render_blocks(&blocks, &cfg)
+            .render_paginated(&blocks, &cfg)
             .context("rendering chapter with software backend")?,
     };
 
+    write_frames(&frames, out)?;
+    println!(
+        "rendered chapter `{id}` ({}x{} x {} page{}){} via {} -> {}",
+        cfg.width,
+        cfg.height,
+        frames.len(),
+        if frames.len() == 1 { "" } else { "s" },
+        match &theme {
+            Some(t) => format!(" with theme `{}`", t.name),
+            None => format!(" in {:?} environment", scene.environment.kind),
+        },
+        backend,
+        out.display()
+    );
+    Ok(())
+}
+
+/// Write one or more frames to `out`. A single page writes exactly `out`;
+/// multiple pages write `{stem}-0001{ext}`, `{stem}-0002{ext}`, ...
+fn write_frames(frames: &[Frame], out: &Path) -> anyhow::Result<()> {
+    if frames.len() == 1 {
+        return write_png(&frames[0], out);
+    }
+    let stem = out
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "page".into());
+    let ext = out
+        .extension()
+        .map(|e| e.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "png".into());
+    let dir = out.parent().unwrap_or_else(|| Path::new("."));
+    for (i, frame) in frames.iter().enumerate() {
+        let name = format!("{stem}-{:04}.{ext}", i + 1);
+        write_png(frame, &dir.join(name))?;
+    }
+    Ok(())
+}
+
+fn write_png(frame: &Frame, out: &Path) -> anyhow::Result<()> {
     let file = fs::File::create(out).with_context(|| format!("creating {}", out.display()))?;
     let mut encoder = png::Encoder::new(file, frame.width, frame.height);
     encoder.set_color(png::ColorType::Rgba);
@@ -376,17 +416,6 @@ fn cmd_render(
     writer
         .write_image_data(&frame.pixels)
         .context("writing PNG pixels")?;
-    println!(
-        "rendered chapter `{id}` ({}x{}){} via {} -> {}",
-        frame.width,
-        frame.height,
-        match &theme {
-            Some(t) => format!(" with theme `{}`", t.name),
-            None => format!(" in {:?} environment", scene.environment.kind),
-        },
-        backend,
-        out.display()
-    );
     Ok(())
 }
 

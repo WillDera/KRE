@@ -53,6 +53,93 @@ fn minimal_epub() -> Vec<u8> {
     ])
 }
 
+fn long_epub() -> Vec<u8> {
+    let container = r#"<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#;
+    let opf = r#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="pub-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="pub-id">urn:uuid:11111111-2222-3333-4444-555555555555</dc:identifier>
+    <dc:title>The Long Dark</dc:title>
+    <dc:creator>Big Dog</dc:creator>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine><itemref idref="ch1"/></spine>
+</package>"#;
+    let paragraphs: String = (0..60)
+        .map(|i| {
+            format!(
+                "<p>Paragraph {i}. The inquisitor crossed the silent chamber while frost clung to the iron walls and the cold wind howled through the arches.</p>"
+            )
+        })
+        .collect();
+    let ch1 = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+  <h1>Arrival</h1>
+  {paragraphs}
+</body>
+</html>"#
+    );
+    build_epub(&[
+        ("mimetype", b"application/epub+zip"),
+        ("META-INF/container.xml", container.as_bytes()),
+        ("OEBPS/content.opf", opf.as_bytes()),
+        ("OEBPS/ch1.xhtml", ch1.as_bytes()),
+    ])
+}
+
+#[test]
+fn render_paginates_into_multiple_pngs() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let epub = dir.path().join("long.epub");
+    std::fs::write(&epub, long_epub()).expect("write epub");
+    let koma_file = dir.path().join("long.koma");
+    let (ok, out) = run(koma(), &["compile", epub.to_str().unwrap()]);
+    assert!(ok, "compile failed: {out}");
+
+    let out = dir.path().join("page.png");
+    let (ok, out) = run(
+        koma(),
+        &[
+            "render",
+            koma_file.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--width",
+            "200",
+            "--height",
+            "200",
+        ],
+    );
+    assert!(ok, "render failed: {out}");
+    assert!(
+        out.contains("pages"),
+        "render output should report pages: {out}"
+    );
+
+    // Multi-page render writes numbered files, not the bare path.
+    let page_files: Vec<_> = std::fs::read_dir(dir.path())
+        .expect("read dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with("page-") && n.ends_with(".png")
+        })
+        .collect();
+    assert!(page_files.len() >= 2, "expected multiple page files");
+    for f in &page_files {
+        let data = std::fs::read(f.path()).expect("read page png");
+        assert_eq!(&data[..8], b"\x89PNG\r\n\x1a\n", "PNG magic");
+    }
+}
+
 fn run(bin: &str, args: &[&str]) -> (bool, String) {
     let out = Command::new(bin).args(args).output().expect("run koma");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
