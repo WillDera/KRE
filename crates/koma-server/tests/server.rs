@@ -330,6 +330,91 @@ async fn session_open_then_scene_state() {
     assert_eq!(scene["version"], "0.1.0");
 }
 
+async fn request_json(
+    app: &Router,
+    method: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let req = Request::builder()
+        .method(method)
+        .uri(path)
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&body).expect("json")))
+        .expect("build request");
+    let resp = app.clone().oneshot(req).await.expect("oneshot");
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = resp
+        .into_body()
+        .collect()
+        .await
+        .expect("collect")
+        .to_bytes()
+        .to_vec();
+    (status, headers, bytes)
+}
+
+#[tokio::test]
+async fn nrp_compile_inline_returns_koma() {
+    let app = router();
+    let body = serde_json::json!({
+        "version": "0.1.0",
+        "document": {
+            "format": "inline",
+            "title": "Cold",
+            "paragraphs": ["A cold coming."]
+        }
+    });
+    let (status, _, bytes) = request_json(&app, "POST", "/nrp/v0.1/compile", body).await;
+    assert_eq!(status, StatusCode::OK, "body: {:?}", String::from_utf8_lossy(&bytes));
+    let pkg = KomaPackage::open(std::io::Cursor::new(bytes.as_slice())).expect("open package");
+    assert_eq!(pkg.chapter_count(), 1);
+}
+
+#[tokio::test]
+async fn nrp_render_markdown_returns_png_with_headers() {
+    let app = router();
+    let body = serde_json::json!({
+        "version": "0.1.0",
+        "document": {
+            "format": "markdown",
+            "content": "# Arrival\n\nA cold coming we had of it.\n"
+        },
+        "context": { "environment": "frozen", "mood": "ominous" },
+        "preferences": {
+            "width": 200,
+            "height": 200,
+            "effects": "off",
+            "backend": "software"
+        }
+    });
+    let (status, headers, png) = request_json(&app, "POST", "/nrp/v0.1/render", body).await;
+    assert_eq!(status, StatusCode::OK, "body: {:?}", String::from_utf8_lossy(&png));
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(
+        headers.get("x-koma-nrp-version").and_then(|v| v.to_str().ok()),
+        Some("0.1.0")
+    );
+    assert!(headers.get("x-koma-pages").is_some());
+}
+
+#[tokio::test]
+async fn nrp_rejects_bad_version() {
+    let app = router();
+    let body = serde_json::json!({
+        "version": "9.9.9",
+        "document": {
+            "format": "inline",
+            "paragraphs": ["x"]
+        }
+    });
+    let (status, _, bytes) = request_json(&app, "POST", "/nrp/v0.1/render", body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("error json");
+    assert!(json.get("error").is_some());
+}
+
 #[tokio::test]
 async fn scene_state_unknown_session_404() {
     let app = router();

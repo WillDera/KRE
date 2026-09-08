@@ -44,10 +44,10 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 12 | Genre-based typography (theme v0.2) | `koma-theme`, `koma-renderer` | done |
 | 13 | Markdown adapter | `koma-markdown` | done |
 | 14 | Runtime host (sessions, lazy window, user state) | `koma-runtime` | done |
+| 15 | NRP / Content API v0.1 | `koma-server` | done |
 
 Roadmap (not started, tracked outside phases):
 
-- **NRP / Content API v0.1** — narrative render protocol surface over HTTP.
 - **External assisted compilation backends** — optional model backends behind
   `AssistedAnalyzer` with mandatory rule-based fallback (compile-time only).
 - **GPU decoration parity polish** — richer ornament primitives beyond fill_rect
@@ -92,9 +92,10 @@ Quick start:
 ./target/debug/koma serve --addr 127.0.0.1:7878
 ```
 
-See [`docs/koma-cli.md`](docs/koma-cli.md) for the full CLI reference and
+See [`docs/koma-cli.md`](docs/koma-cli.md) for the full CLI reference,
 [`docs/network-api-spec-v0.1.md`](docs/network-api-spec-v0.1.md) for the
-HTTP API.
+HTTP API, and [`docs/nrp-spec-v0.1.md`](docs/nrp-spec-v0.1.md) for the
+JSON Content API (NRP).
 
 ## Documentation
 
@@ -108,6 +109,7 @@ HTTP API.
 | [`docs/theme-spec-v0.2.md`](docs/theme-spec-v0.2.md) | theme YAML format (v0.2 genre + roles) |
 | [`docs/scene-spec-v0.1.md`](docs/scene-spec-v0.1.md) | scene graph JSON format |
 | [`docs/network-api-spec-v0.1.md`](docs/network-api-spec-v0.1.md) | HTTP network API |
+| [`docs/nrp-spec-v0.1.md`](docs/nrp-spec-v0.1.md) | Narrative Rendering Protocol / Content API |
 | [`docs/plugin-api-spec-v0.1.md`](docs/plugin-api-spec-v0.1.md) | plugin / adapter API |
 
 ### Integration guides

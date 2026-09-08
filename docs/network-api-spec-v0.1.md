@@ -162,6 +162,7 @@ implementations see:
 ## See also
 
 - CLI toolchain: `docs/koma-cli.md` (same operations as a local binary)
+- NRP / Content API: `docs/nrp-spec-v0.1.md`
 - `.koma` package format: `docs/koma-format-spec-v0.1.md`
 - Scene JSON: `docs/scene-spec-v0.1.md`
 - Theme YAML: `docs/theme-spec-v0.1.md`

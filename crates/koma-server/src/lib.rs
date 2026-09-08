@@ -10,6 +10,8 @@
 //! - `POST /render/document` — `.koma` bytes + options -> PNG frame bytes
 //! - `POST /session/open` — `.koma` bytes -> `{ session_id, ... }`
 //! - `GET /scene/state?session=<id>&chapter=<id>` — scene JSON
+//! - `POST /nrp/v0.1/compile` — NRP JSON → `.koma` (Content API)
+//! - `POST /nrp/v0.1/render` — NRP JSON → PNG (Content API)
 //!
 //! Sessions are lightweight in-memory handles to uploaded packages. The
 //! service is stateless otherwise; rendering is GPU-accelerated when the
@@ -17,10 +19,12 @@
 
 pub mod error;
 pub mod handlers;
+pub mod nrp;
 pub mod state;
 
 pub use error::ApiError;
 pub use handlers::{compile_book, open_session, render_document, scene_state};
+pub use nrp::{nrp_compile, nrp_render};
 pub use state::{ChapterInfo, ServerState, Session};
 
 use axum::Router;
@@ -34,6 +38,8 @@ pub fn router(state: ServerState) -> Router {
         .route("/render/document", post(handlers::render_document))
         .route("/session/open", post(handlers::open_session))
         .route("/scene/state", get(handlers::scene_state))
+        .route("/nrp/v0.1/compile", post(nrp::nrp_compile))
+        .route("/nrp/v0.1/render", post(nrp::nrp_render))
         .with_state(state)
         .layer(DefaultBodyLimit::disable())
 }

@@ -254,7 +254,7 @@ fn parse_markdown(bytes: &[u8]) -> Result<Document, ApiError> {
         .map_err(|e| ApiError::bad_request(format!("markdown parse failed: {e}")))
 }
 
-fn parse_optional_theme(yaml: Option<&str>) -> Result<Option<Theme>, ApiError> {
+pub(crate) fn parse_optional_theme(yaml: Option<&str>) -> Result<Option<Theme>, ApiError> {
     match yaml {
         Some(yaml) => {
             let theme = Theme::parse_yaml(yaml.as_bytes())
@@ -269,8 +269,8 @@ fn parse_optional_theme(yaml: Option<&str>) -> Result<Option<Theme>, ApiError> {
 }
 
 /// Paginate a chapter's blocks and render every page with the requested
-/// backend. Returns `(frames, page_count)`.
-fn render_pages(
+/// backend.
+pub(crate) fn render_pages(
     blocks: &[Block],
     cfg: &LayoutConfig,
     backend: &str,
@@ -297,7 +297,7 @@ fn render_pages(
 }
 
 /// Build the display blocks for a chapter: title heading + section blocks.
-fn chapter_blocks(ch: &Chapter) -> Vec<Block> {
+pub(crate) fn chapter_blocks(ch: &Chapter) -> Vec<Block> {
     let mut blocks = Vec::new();
     if let Some(title) = &ch.title {
         blocks.push(Block {
@@ -318,7 +318,7 @@ fn chapter_blocks(ch: &Chapter) -> Vec<Block> {
 }
 
 /// Encode a frame as a PNG.
-fn encode_png(frame: &Frame) -> Result<Vec<u8>, ApiError> {
+pub(crate) fn encode_png(frame: &Frame) -> Result<Vec<u8>, ApiError> {
     let mut out = Vec::new();
     {
         let mut encoder = png::Encoder::new(&mut out, frame.width, frame.height);
