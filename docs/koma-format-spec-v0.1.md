@@ -22,6 +22,9 @@ loaded on demand.
 book.koma (zip)
 ├── koma.json            # package manifest (JSON)
 ├── chapters/<id>.ir     # protobuf-encoded Chapter (lazy load)
+├── scenes/<id>.json     # per-chapter scene graph (lazy load)
+├── theme.yaml           # optional embedded theme
+├── analysis.json        # optional compile-time semantic analysis
 └── assets/<id>          # embedded asset bytes (optional, keyed by media id)
 ```
 
@@ -49,7 +52,10 @@ book.koma (zip)
     { "id": "pic", "path": "assets/pic", "mime": null, "bytes": 1234 }
   ],
   "theme": null,
-  "scene": null
+  "analysis": "analysis.json",
+  "scenes": [
+    { "id": "ch1", "path": "scenes/ch1.json", "bytes": 512 }
+  ]
 }
 ```
 

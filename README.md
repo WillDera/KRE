@@ -40,13 +40,15 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 8 | Network service | `koma-server` | done |
 | 9 | Pagination + page-break engine + hit testing | `koma-renderer` | done |
 | 10 | Selection / highlight / annotation polish | `koma-renderer` | done |
-| 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | next |
+| 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | done |
 
 Roadmap (not started, tracked outside phases):
 
 - **Genre-based typography** — theme spec v0.2: per-role heading styles
   (drop caps, decorative rules, first-line indent, justification, weight)
   plus a genre selection axis across themes.
+- **External assisted compilation backends** — optional model backends behind
+  `AssistedAnalyzer` with mandatory rule-based fallback (compile-time only).
 
 ## Workspace
 
@@ -54,6 +56,7 @@ Roadmap (not started, tracked outside phases):
 |---|---|
 | `crates/koma-core` | shared types, KIR (protobuf), errors, plugin interfaces |
 | `crates/koma-adapters/koma-epub` | EPUB → KIR content adapter |
+| `crates/koma-analysis` | rule-based semantic analysis (compile-time) |
 | `crates/koma-compiler` | KIR → `.koma` packages (optimization, scenes, assets) |
 | `crates/koma-scene` | scene graph model + deterministic synthesis |
 | `crates/koma-theme` | versioned YAML theme model |
@@ -149,6 +152,7 @@ KRE is an engine, not a store.
 crates/          # library crates
   koma-core/
   koma-adapters/koma-epub/
+  koma-analysis/
   koma-compiler/
   koma-scene/
   koma-theme/

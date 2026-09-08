@@ -134,17 +134,24 @@ path (`ContentSource::uri`).
 ## Analyzers
 
 Analyzers produce semantic metadata from KIR. Their output is **compilation
-data only** — the runtime never calls AI.
+data only** — the runtime never calls analyzers or external models.
 
 ```rust
 trait NarrativeAnalyzer {
-    fn analyze(document: &Document) -> AnalysisResult;
+    fn id(&self) -> &'static str;
+    fn analyze(&self, document: &Document) -> AnalysisResult;
 }
 ```
 
-Analysis must be deterministic or else reduced to deterministic fallbacks;
-AI must never be required (AGENTS.md failure handling). Semantic output goes
-into the compiled package, never into content truth.
+Shipped in `koma-analysis` (Phase 11):
+
+- `RuleBasedAnalyzer` — deterministic lexicon matching (default at compile).
+- `AssistedAnalyzer` — same trait; currently delegates to rules. Future
+  external backends must fall back to rules on error or denial.
+
+Analysis embeds as `analysis.json` in `.koma` packages and refines scene
+synthesis (environment kind, atmosphere). It never mutates KIR plain text.
+Use `koma compile --no-analyze` to skip.
 
 ## Other plugin kinds
 
