@@ -8,8 +8,9 @@
 //! of every glyph so selection and highlighting operate on the text layer,
 //! never on raster pixels (OCR is never required).
 
-use cosmic_text::{Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Wrap};
+use cosmic_text::{Align, Attrs, Buffer, Family, FontSystem, Metrics, Shaping, Weight, Wrap};
 use koma_core::kir::Block;
+use koma_theme::{FontWeight, RoleStyle, RoleStyleSet};
 
 use crate::backend::Color;
 
@@ -35,6 +36,8 @@ pub struct LayoutConfig {
     pub min_lines: u32,
     /// Keep a heading on the same page as the block that follows it.
     pub keep_headings_with_next: bool,
+    /// Resolved per-role styles (genre + theme overrides).
+    pub roles: RoleStyleSet,
 }
 
 impl Default for LayoutConfig {
@@ -54,6 +57,7 @@ impl Default for LayoutConfig {
             font_family: None,
             min_lines: 2,
             keep_headings_with_next: true,
+            roles: RoleStyleSet::default(),
         }
     }
 }
@@ -94,6 +98,18 @@ pub struct Page {
     /// `lines[i]` originates from block `line_blocks[i]` (index into the
     /// input `blocks` slice).
     pub line_blocks: Vec<usize>,
+    /// Presentation decorations (heading rules, etc.) in page coordinates.
+    pub decorations: Vec<PageDecoration>,
+}
+
+/// A non-glyph page ornament (decorative rule under a heading).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageDecoration {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub color: Color,
 }
 
 /// A chapter laid out into pages. Deterministic: identical inputs produce
@@ -213,6 +229,7 @@ pub fn paginate_blocks(
     let page_height = cfg.height as f32 - 2.0 * cfg.margin;
     let min_lines = cfg.min_lines.max(1) as usize;
     let margin = cfg.margin;
+    let content_width = cfg.width as f32 - 2.0 * cfg.margin;
     // Small epsilon so floating-point line heights don't cascade page breaks.
     let eps = 0.5;
 
@@ -243,7 +260,7 @@ pub fn paginate_blocks(
         }
 
         if cost <= page_height - page.used + eps {
-            page.place(sb, 0, n, margin, true);
+            page.place(sb, 0, n, margin, content_width, true);
             i += 1;
             continue;
         }
@@ -270,7 +287,7 @@ pub fn paginate_blocks(
             if let Some((lines, blocks)) = carry {
                 page.replace_top(lines, blocks, margin);
             }
-            page.place(sb, 0, n, margin, false);
+            page.place(sb, 0, n, margin, content_width, false);
             i += 1;
             continue;
         }
@@ -304,7 +321,7 @@ pub fn paginate_blocks(
             }
             take = take.max(1);
 
-            page.place(sb, placed, placed + take, margin, first_chunk);
+            page.place(sb, placed, placed + take, margin, content_width, first_chunk);
             placed += take;
             first_chunk = false;
             if placed < n {
@@ -319,6 +336,7 @@ pub fn paginate_blocks(
         pages.push(Page {
             lines: Vec::new(),
             line_blocks: Vec::new(),
+            decorations: Vec::new(),
         });
     }
     PaginatedLayout { pages }
@@ -333,11 +351,23 @@ fn block_color(block: &Block, cfg: &LayoutConfig) -> Color {
     }
 }
 
-/// Per-block metrics: headings scale up relative to body text.
-fn block_metrics(block: &Block, cfg: &LayoutConfig) -> (Metrics, f32) {
+fn role_for_block(block: &Block, cfg: &LayoutConfig) -> RoleStyle {
+    match &block.kind {
+        Some(koma_core::kir::block::Kind::Heading(h)) => match h.level {
+            0 | 1 => cfg.roles.h1.clone(),
+            2 => cfg.roles.h2.clone(),
+            _ => cfg.roles.h3.clone(),
+        },
+        Some(koma_core::kir::block::Kind::Quote(_)) => cfg.roles.quote.clone(),
+        _ => cfg.roles.body.clone(),
+    }
+}
+
+/// Per-block metrics: headings use role scale (fallback 1.5 / 1.25).
+fn block_metrics(block: &Block, cfg: &LayoutConfig, role: &RoleStyle) -> (Metrics, f32) {
     match &block.kind {
         Some(koma_core::kir::block::Kind::Heading(h)) => {
-            let scale = if h.level <= 1 { 1.5 } else { 1.25 };
+            let scale = role.scale.unwrap_or(if h.level <= 1 { 1.5 } else { 1.25 });
             let size = cfg.font_size * scale;
             (
                 Metrics {
@@ -357,6 +387,28 @@ fn block_metrics(block: &Block, cfg: &LayoutConfig) -> (Metrics, f32) {
     }
 }
 
+fn attrs_for<'a>(cfg: &'a LayoutConfig, role: &RoleStyle) -> Attrs<'a> {
+    let mut attrs = match &cfg.font_family {
+        Some(family) => Attrs::new().family(Family::Name(family)),
+        None => Attrs::new(),
+    };
+    attrs = match role.weight {
+        FontWeight::Bold => attrs.weight(Weight::BOLD),
+        FontWeight::Normal => attrs.weight(Weight::NORMAL),
+    };
+    attrs
+}
+
+fn split_first_char(text: &str) -> Option<(&str, &str)> {
+    let mut chars = text.char_indices();
+    let (_, c) = chars.next()?;
+    if c.is_whitespace() {
+        return None;
+    }
+    let end = chars.next().map(|(i, _)| i).unwrap_or(text.len());
+    Some((&text[..end], &text[end..]))
+}
+
 /// A block shaped into lines, ready for placement into pages. Glyph x
 /// positions include the margin; y positions are relative to the block top
 /// (placement overrides them with page-absolute coordinates).
@@ -366,6 +418,8 @@ struct ShapedBlock {
     line_height: f32,
     paragraph_spacing: f32,
     is_heading: bool,
+    decorative_rule: Option<koma_theme::DecorativeRule>,
+    color: Color,
 }
 
 fn shape_block(
@@ -374,27 +428,64 @@ fn shape_block(
     block: &Block,
     cfg: &LayoutConfig,
 ) -> ShapedBlock {
-    let (metrics, paragraph_spacing) = block_metrics(block, cfg);
+    let role = role_for_block(block, cfg);
+    let (metrics, paragraph_spacing) = block_metrics(block, cfg, &role);
     let color = block_color(block, cfg);
     let mut lines = Vec::new();
+    let attrs = attrs_for(cfg, &role);
 
     let text = block.plain_text();
-    if !text.is_empty() {
-        let attrs = match &cfg.font_family {
-            Some(family) => Attrs::new().family(Family::Name(family)),
-            None => Attrs::new(),
-        };
+    let is_paragraph = matches!(
+        block.kind,
+        Some(koma_core::kir::block::Kind::Paragraph(_))
+    );
+
+    let (drop_prefix, body_text, drop_reserve) = if is_paragraph && role.drop_cap.enabled {
+        if let Some((first, rest)) = split_first_char(&text) {
+            let reserve = cfg.font_size * role.drop_cap.scale.max(1.0) * 0.55;
+            (Some(first.to_owned()), rest.to_owned(), reserve)
+        } else {
+            (None, text, 0.0)
+        }
+    } else {
+        (None, text, 0.0)
+    };
+
+    if !body_text.is_empty() || drop_prefix.is_some() {
         let text_width = cfg.width as f32 - 2.0 * cfg.margin;
         let mut buffer = Buffer::new(font_system, metrics);
         buffer.set_size(font_system, Some(text_width), None);
         buffer.set_wrap(font_system, cfg.wrap);
-        buffer.set_text(font_system, &text, attrs, Shaping::Advanced);
+        let shape_text = if body_text.is_empty() {
+            " "
+        } else {
+            &body_text
+        };
+        buffer.set_text(font_system, shape_text, attrs, Shaping::Advanced);
+        if role.justify {
+            for line in buffer.lines.iter_mut() {
+                line.set_align(Some(Align::Justified));
+            }
+        }
         buffer.shape_until_scroll(font_system, false);
 
-        for run in buffer.layout_runs() {
+        let hang_lines = if drop_prefix.is_some() {
+            role.drop_cap.lines.max(1) as usize
+        } else {
+            0
+        };
+
+        for (li, run) in buffer.layout_runs().enumerate() {
             let mut glyphs = Vec::with_capacity(run.glyphs.len());
+            let indent = if li == 0 {
+                role.first_line_indent + drop_reserve
+            } else if li < hang_lines {
+                drop_reserve
+            } else {
+                0.0
+            };
             for glyph in run.glyphs {
-                let physical = glyph.physical((cfg.margin, 0.0), 1.0);
+                let physical = glyph.physical((cfg.margin + indent, 0.0), 1.0);
                 glyphs.push(PlacedGlyph {
                     font_id: glyph.font_id,
                     glyph_id: glyph.glyph_id,
@@ -414,7 +505,54 @@ fn shape_block(
                 });
             }
         }
+
+        // Prepend drop-cap glyph(s) onto the first line (or create one).
+        if let Some(first) = drop_prefix {
+            let drop_metrics = Metrics {
+                font_size: cfg.font_size * role.drop_cap.scale.max(1.0),
+                line_height: cfg.line_height * role.drop_cap.scale.max(1.0),
+            };
+            let mut drop_buf = Buffer::new(font_system, drop_metrics);
+            drop_buf.set_size(font_system, Some(text_width), None);
+            drop_buf.set_text(font_system, &first, attrs, Shaping::Advanced);
+            drop_buf.shape_until_scroll(font_system, false);
+            let mut drop_glyphs = Vec::new();
+            for run in drop_buf.layout_runs() {
+                for glyph in run.glyphs {
+                    let physical = glyph.physical((cfg.margin, 0.0), 1.0);
+                    drop_glyphs.push(PlacedGlyph {
+                        font_id: glyph.font_id,
+                        glyph_id: glyph.glyph_id,
+                        font_size: glyph.font_size,
+                        x: physical.x,
+                        y: physical.y,
+                        offset_x: physical.cache_key.x_bin.as_float(),
+                        offset_y: physical.cache_key.y_bin.as_float(),
+                        color,
+                        byte_range: (0, first.len() as u32),
+                    });
+                }
+            }
+            if !drop_glyphs.is_empty() {
+                if lines.is_empty() {
+                    lines.push(PlacedLine {
+                        glyphs: drop_glyphs,
+                        line_height: metrics.line_height,
+                    });
+                } else {
+                    let mut merged = drop_glyphs;
+                    merged.append(&mut lines[0].glyphs);
+                    lines[0].glyphs = merged;
+                }
+            }
+        }
     }
+
+    let decorative_rule = if role.decorative_rule.enabled {
+        Some(role.decorative_rule.clone())
+    } else {
+        None
+    };
 
     ShapedBlock {
         block_index,
@@ -422,6 +560,8 @@ fn shape_block(
         line_height: metrics.line_height,
         paragraph_spacing,
         is_heading: matches!(block.kind, Some(koma_core::kir::block::Kind::Heading(_))),
+        decorative_rule,
+        color,
     }
 }
 
@@ -429,6 +569,7 @@ fn shape_block(
 struct PageBuilder {
     lines: Vec<PlacedLine>,
     blocks: Vec<usize>,
+    decorations: Vec<PageDecoration>,
     used: f32,
 }
 
@@ -437,6 +578,7 @@ impl PageBuilder {
         Self {
             lines: Vec::new(),
             blocks: Vec::new(),
+            decorations: Vec::new(),
             used: 0.0,
         }
     }
@@ -454,6 +596,7 @@ impl PageBuilder {
         start: usize,
         end: usize,
         margin: f32,
+        content_width: f32,
         with_spacing: bool,
     ) {
         if with_spacing && !self.lines.is_empty() {
@@ -468,6 +611,23 @@ impl PageBuilder {
             self.blocks.push(shaped.block_index);
             self.lines.push(line);
             self.used += self.lines.last().unwrap().line_height;
+        }
+        // Decorative rule under the final chunk of a heading block.
+        if end == shaped.lines.len() {
+            if let Some(rule) = &shaped.decorative_rule {
+                if rule.enabled && !shaped.lines.is_empty() && start < end {
+                    self.used += rule.gap;
+                    let y = margin + self.used;
+                    self.decorations.push(PageDecoration {
+                        x: margin,
+                        y,
+                        width: content_width,
+                        height: rule.thickness.max(1.0),
+                        color: shaped.color,
+                    });
+                    self.used += rule.thickness.max(1.0);
+                }
+            }
         }
     }
 
@@ -498,10 +658,11 @@ impl PageBuilder {
 
     /// Flush this page into `pages` and reset.
     fn finish(&mut self, pages: &mut Vec<Page>) {
-        if !self.lines.is_empty() {
+        if !self.lines.is_empty() || !self.decorations.is_empty() {
             pages.push(Page {
                 lines: std::mem::take(&mut self.lines),
                 line_blocks: std::mem::take(&mut self.blocks),
+                decorations: std::mem::take(&mut self.decorations),
             });
         }
         self.used = 0.0;
@@ -825,5 +986,54 @@ mod tests {
         let mut fs = FontSystem::new();
         let paginated = paginate_blocks(&mut fs, &blocks_with(&["x"]), &cfg(400, 200));
         assert!(paginated.hit_test(5, 0.0, 0.0).is_none());
+    }
+
+    #[test]
+    fn genre_roles_indent_and_decorate_heading() {
+        use koma_theme::Theme;
+
+        let mut fs = FontSystem::new();
+        let theme = Theme::parse_yaml(
+            br##"
+version: "0.2.0"
+name: Literary
+genre: literary
+"##
+            .as_slice(),
+        )
+        .expect("parse");
+        let mut c = cfg(600, 800);
+        c.roles = theme.resolved_roles();
+        let blocks = vec![
+            heading("Chapter One"),
+            blocks_with(&["A cold coming we had of it."])[0].clone(),
+        ];
+        let paginated = paginate_blocks(&mut fs, &blocks, &c);
+        let page = &paginated.pages[0];
+        assert!(
+            !page.decorations.is_empty(),
+            "literary h1 should emit a decorative rule"
+        );
+        // Body: drop-cap glyph sits at the margin; following glyphs hang indented.
+        let body_line = page
+            .lines
+            .iter()
+            .zip(page.line_blocks.iter())
+            .find(|(_, b)| **b == 1)
+            .map(|(l, _)| l)
+            .expect("body line");
+        assert!(
+            body_line.glyphs[0].font_size > c.font_size,
+            "expected oversized drop cap"
+        );
+        assert!(
+            body_line.glyphs.len() > 1,
+            "expected body glyphs after drop cap"
+        );
+        assert!(
+            body_line.glyphs[1].x as f32 > c.margin + 10.0,
+            "expected hang indent after drop cap, x={}",
+            body_line.glyphs[1].x
+        );
     }
 }

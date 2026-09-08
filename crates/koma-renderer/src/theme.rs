@@ -25,6 +25,7 @@ pub fn layout_config_from_theme(theme: &Theme) -> LayoutConfig {
         quote_color: theme_color(theme.colors.quote),
         background: theme_color(theme.colors.background),
         font_family: theme.typography.font_family.clone(),
+        roles: theme.resolved_roles(),
         ..Default::default()
     }
 }

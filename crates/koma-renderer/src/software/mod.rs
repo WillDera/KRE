@@ -94,6 +94,15 @@ impl SoftwareBackend {
                     paint_rects(&mut frame, &rects, mark.resolve_color());
                 }
             }
+            for deco in &page.decorations {
+                frame.fill_rect(
+                    deco.x as i32,
+                    deco.y as i32,
+                    deco.width.ceil() as i32,
+                    deco.height.ceil().max(1.0) as i32,
+                    deco.color,
+                );
+            }
             for line in &page.lines {
                 for g in &line.glyphs {
                     text::rasterize_glyph(&self.font_system, &mut frame, *g);

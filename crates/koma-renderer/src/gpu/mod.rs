@@ -153,19 +153,29 @@ impl WgpuBackend {
         let mut frames = Vec::with_capacity(paginated.page_count());
         for page in &paginated.pages {
             let (vertices, atlas) = self.build_quads(&page.lines)?;
-            if vertices.is_empty() {
+            let mut frame = if vertices.is_empty() {
                 let mut frame = Frame::new(cfg.width, cfg.height);
                 frame.fill(cfg.background);
-                frames.push(frame);
+                frame
             } else {
-                frames.push(self.composite(
+                self.composite(
                     cfg.width,
                     cfg.height,
                     cfg.background,
                     &vertices,
                     &atlas,
-                )?);
+                )?
+            };
+            for deco in &page.decorations {
+                frame.fill_rect(
+                    deco.x as i32,
+                    deco.y as i32,
+                    deco.width.ceil() as i32,
+                    deco.height.ceil().max(1.0) as i32,
+                    deco.color,
+                );
             }
+            frames.push(frame);
         }
         Ok(frames)
     }

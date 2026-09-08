@@ -23,8 +23,8 @@ pub use backend::{
     RenderBackend, RenderPrimitive, ShaderItem, TextItem, TransformItem,
 };
 pub use layout::{
-    LayoutConfig, Page, PaginatedLayout, PlacedGlyph, PlacedLine, TextHit, layout_blocks,
-    paginate_blocks,
+    LayoutConfig, Page, PageDecoration, PaginatedLayout, PlacedGlyph, PlacedLine, TextHit,
+    layout_blocks, paginate_blocks,
 };
 pub use scene::layout_config_from_scene;
 pub use selection::{
