@@ -38,7 +38,15 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 6 | Scene graph | `koma-scene` | done |
 | 7 | GPU renderer (wgpu) | `koma-renderer` | done |
 | 8 | Network service | `koma-server` | done |
-| 9 | AI-assisted compilation | — | next |
+| 9 | Pagination + page-break engine + hit testing | `koma-renderer` | done |
+| 10 | Selection / highlight / annotation polish | `koma-renderer` | next |
+| 11 | Rule-based `koma-analysis`, then optional AI compile | `koma-analysis` | queued |
+
+Roadmap (not started, tracked outside phases):
+
+- **Genre-based typography** — theme spec v0.2: per-role heading styles
+  (drop caps, decorative rules, first-line indent, justification, weight)
+  plus a genre selection axis across themes.
 
 ## Workspace
 
