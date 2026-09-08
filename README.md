@@ -43,10 +43,10 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | done |
 | 12 | Genre-based typography (theme v0.2) | `koma-theme`, `koma-renderer` | done |
 | 13 | Markdown adapter | `koma-markdown` | done |
+| 14 | Runtime host (sessions, lazy window, user state) | `koma-runtime` | done |
 
 Roadmap (not started, tracked outside phases):
 
-- **Runtime host** — sessions, lazy chapter window, user-state store.
 - **NRP / Content API v0.1** — narrative render protocol surface over HTTP.
 - **External assisted compilation backends** — optional model backends behind
   `AssistedAnalyzer` with mandatory rule-based fallback (compile-time only).
@@ -66,6 +66,7 @@ Roadmap (not started, tracked outside phases):
 | `crates/koma-theme` | versioned YAML theme model |
 | `crates/koma-renderer` | layout + rendering (software + wgpu backends) |
 | `crates/koma-server` | HTTP network service (axum) |
+| `crates/koma-runtime` | runtime host: sessions, lazy chapter window, user state |
 | `tools/koma-cli` | `koma` developer toolchain |
 
 ## Getting started

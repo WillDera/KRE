@@ -10,6 +10,7 @@ members = [
     "crates/koma-scene",
     "crates/koma-server",
     "crates/koma-theme",
+    "crates/koma-runtime",
     "tools/koma-cli",
 ]
 

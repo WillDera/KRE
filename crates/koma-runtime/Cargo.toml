@@ -1,0 +1,19 @@
+[package]
+name = "koma-runtime"
+description = "Koma runtime host: sessions, lazy chapter windows, user state."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+koma-compiler = { path = "../koma-compiler" }
+koma-core = { path = "../koma-core" }
+koma-renderer = { path = "../koma-renderer" }
+koma-scene = { path = "../koma-scene" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3"
