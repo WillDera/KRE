@@ -19,5 +19,8 @@ pub use scene::{
     DirectionalLight, Environment, EnvironmentKind, LightSource, Lighting, Node, NodeKind,
     SCENE_VERSION, Scene, SceneError, Transition, TransitionKind,
 };
-pub use synthesis::default_scene_for_chapter;
+pub use synthesis::{
+    SceneAnalysisHints, apply_chapter_analysis, default_scene_for_chapter,
+    default_scene_for_chapter_with_hints,
+};
 pub use timeline::{ActionKind, Timeline, TimelineAction, TimelineEvent};

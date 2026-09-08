@@ -14,6 +14,7 @@ anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 koma-compiler = { path = "../../crates/koma-compiler" }
 koma-core = { path = "../../crates/koma-core" }
+koma-analysis = { path = "../../crates/koma-analysis" }
 koma-epub = { path = "../../crates/koma-adapters/koma-epub" }
 koma-renderer = { path = "../../crates/koma-renderer" }
 koma-server = { path = "../../crates/koma-server" }

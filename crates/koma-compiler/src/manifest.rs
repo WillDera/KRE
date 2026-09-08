@@ -21,6 +21,9 @@ pub struct PackageManifest {
     pub assets: Vec<AssetEntry>,
     /// Theme information path (theme engine).
     pub theme: Option<String>,
+    /// Compile-time semantic analysis path (`analysis.json`), when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<String>,
     /// Per-chapter scene graphs (lazily loaded like chapters).
     #[serde(default)]
     pub scenes: Vec<SceneEntry>,

@@ -48,6 +48,11 @@ enum Command {
         assets: Option<PathBuf>,
         #[arg(long, help = "theme YAML file to embed in the package (Phase 5)")]
         theme: Option<PathBuf>,
+        #[arg(
+            long,
+            help = "skip rule-based semantic analysis (no analysis.json; theme-only scenes)"
+        )]
+        no_analyze: bool,
     },
     /// Print package metadata and the chapter index.
     Inspect { package: PathBuf },
@@ -109,7 +114,14 @@ fn main() -> anyhow::Result<()> {
             out,
             assets,
             theme,
-        } => cmd_compile(&input, out.as_deref(), assets.as_deref(), theme.as_deref()),
+            no_analyze,
+        } => cmd_compile(
+            &input,
+            out.as_deref(),
+            assets.as_deref(),
+            theme.as_deref(),
+            no_analyze,
+        ),
         Command::Inspect { package } => cmd_inspect(&package),
         Command::Validate { package } => cmd_validate(&package),
         Command::Preview { package, chapter } => cmd_preview(&package, chapter.as_deref()),
@@ -154,6 +166,7 @@ fn cmd_compile(
     out: Option<&Path>,
     assets_dir: Option<&Path>,
     theme_path: Option<&Path>,
+    no_analyze: bool,
 ) -> anyhow::Result<()> {
     let doc = import_document(input)?;
     let theme = theme_path
@@ -178,17 +191,27 @@ fn cmd_compile(
         .map(Path::to_path_buf)
         .unwrap_or_else(|| input.with_extension("koma"));
     let file = fs::File::create(&out).with_context(|| format!("creating {}", out.display()))?;
+    let analyzer = if no_analyze {
+        None
+    } else {
+        Some(&koma_analysis::RuleBasedAnalyzer as &dyn koma_analysis::NarrativeAnalyzer)
+    };
     let manifest = KomaCompiler
-        .compile_with_theme(&doc, &assets, theme.as_ref(), file)
+        .compile_with_analyzer(&doc, &assets, theme.as_ref(), analyzer, file)
         .with_context(|| format!("compiling {}", out.display()))?;
     println!(
-        "compiled {} chapter(s), {} asset(s){} -> {}",
+        "compiled {} chapter(s), {} asset(s){}{} -> {}",
         manifest.chapters.len(),
         manifest.assets.len(),
         theme
             .as_ref()
             .map(|t| format!(", theme `{}`", t.name))
             .unwrap_or_default(),
+        if manifest.analysis.is_some() {
+            ", analysis"
+        } else {
+            ""
+        },
         out.display()
     );
     Ok(())
@@ -240,6 +263,11 @@ fn cmd_inspect(path: &Path) -> anyhow::Result<()> {
         println!("theme:      {theme_path}");
     } else {
         println!("theme:      (none)");
+    }
+    if let Some(analysis_path) = &m.analysis {
+        println!("analysis:   {analysis_path}");
+    } else {
+        println!("analysis:   (none)");
     }
     println!("scenes ({}):", m.scenes.len());
     for s in &m.scenes {

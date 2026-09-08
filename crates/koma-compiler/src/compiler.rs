@@ -3,9 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Seek, Write};
 
+use koma_analysis::{NarrativeAnalyzer, RuleBasedAnalyzer};
 use koma_core::error::validate_version;
 use koma_core::kir::{Document, block};
-use koma_scene::default_scene_for_chapter;
+use koma_scene::{SceneAnalysisHints, default_scene_for_chapter_with_hints};
 use koma_theme::Theme;
 use prost::Message as _;
 use zip::write::FileOptions;
@@ -18,6 +19,8 @@ use crate::manifest::{
 
 /// Zip entry containing the embedded theme (presentation truth).
 pub const THEME_PATH: &str = "theme.yaml";
+/// Zip entry containing compile-time semantic analysis.
+pub const ANALYSIS_PATH: &str = "analysis.json";
 
 #[derive(Debug, thiserror::Error)]
 pub enum CompileError {
@@ -27,6 +30,8 @@ pub enum CompileError {
     Theme(String),
     #[error("scene error: {0}")]
     Scene(String),
+    #[error("analysis error: {0}")]
+    Analysis(String),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("zip error: {0}")]
@@ -47,6 +52,8 @@ pub struct KomaCompiler;
 impl KomaCompiler {
     /// Compile a KIR `Document` (plus optional asset bytes keyed by media_id)
     /// into a `.koma` zip written to `writer`. Returns the package manifest.
+    ///
+    /// Runs the default rule-based analyzer (Phase 11).
     pub fn compile<W: Write + Seek>(
         &self,
         document: &Document,
@@ -57,11 +64,33 @@ impl KomaCompiler {
     }
 
     /// Compile with an optional embedded theme (`theme.yaml`).
+    /// Runs the default rule-based analyzer.
     pub fn compile_with_theme<W: Write + Seek>(
         &self,
         document: &Document,
         assets: &HashMap<String, Vec<u8>>,
         theme: Option<&Theme>,
+        writer: W,
+    ) -> Result<PackageManifest, CompileError> {
+        self.compile_with_analyzer(
+            document,
+            assets,
+            theme,
+            Some(&RuleBasedAnalyzer as &dyn NarrativeAnalyzer),
+            writer,
+        )
+    }
+
+    /// Compile with an optional theme and optional analyzer.
+    ///
+    /// Pass `analyzer: None` to skip analysis (scenes use theme defaults only;
+    /// no `analysis.json` is embedded).
+    pub fn compile_with_analyzer<W: Write + Seek>(
+        &self,
+        document: &Document,
+        assets: &HashMap<String, Vec<u8>>,
+        theme: Option<&Theme>,
+        analyzer: Option<&dyn NarrativeAnalyzer>,
         writer: W,
     ) -> Result<PackageManifest, CompileError> {
         validate_version(&document.version)
@@ -81,6 +110,13 @@ impl KomaCompiler {
         // a neutral default so environments still carry sane presentation.
         let scene_theme = theme.cloned().unwrap_or_else(|| Theme::minimal("default"));
 
+        let analysis = analyzer.map(|a| a.analyze(document));
+        let analysis_json = analysis
+            .as_ref()
+            .map(|a| a.to_json())
+            .transpose()
+            .map_err(|e| CompileError::Analysis(e.to_string()))?;
+
         // Pre-encode chapters (also yields sizes for the manifest) and
         // validate entry ids against path traversal.
         let mut chapters: Vec<(String, Vec<u8>)> = Vec::with_capacity(document.chapters.len());
@@ -94,7 +130,7 @@ impl KomaCompiler {
         }
 
         // Scene generation (compiler responsibility): one deterministic scene
-        // per chapter.
+        // per chapter, optionally refined by analysis hints.
         let scenes: Vec<(String, Vec<u8>)> = document
             .chapters
             .iter()
@@ -106,7 +142,14 @@ impl KomaCompiler {
                     .flat_map(|s| s.blocks.iter())
                     .cloned()
                     .collect();
-                let scene = default_scene_for_chapter(&id, &scene_theme, &blocks);
+                let hints = analysis.as_ref().and_then(|a| {
+                    a.chapter(&id).map(|ch| SceneAnalysisHints {
+                        mood: ch.mood.clone(),
+                        environment: ch.environment.clone(),
+                    })
+                });
+                let scene =
+                    default_scene_for_chapter_with_hints(&id, &scene_theme, &blocks, hints.as_ref());
                 let json = scene
                     .to_json()
                     .map_err(|e| CompileError::Scene(e.to_string()))?;
@@ -151,6 +194,7 @@ impl KomaCompiler {
                 })
                 .collect(),
             theme: theme_yaml.as_ref().map(|_| THEME_PATH.to_owned()),
+            analysis: analysis_json.as_ref().map(|_| ANALYSIS_PATH.to_owned()),
             scenes: scenes
                 .iter()
                 .map(|(id, buf)| SceneEntry {
@@ -182,6 +226,11 @@ impl KomaCompiler {
         if let Some(yaml) = &theme_yaml {
             zip.start_file(THEME_PATH, entry_options())?;
             zip.write_all(yaml.as_bytes())?;
+        }
+
+        if let Some(json) = &analysis_json {
+            zip.start_file(ANALYSIS_PATH, entry_options())?;
+            zip.write_all(json.as_bytes())?;
         }
 
         // Scenes in chapter order for determinism.
@@ -535,5 +584,45 @@ colors:
         let a = compile_to(&doc, &HashMap::new());
         let b = compile_to(&doc, &HashMap::new());
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn embeds_analysis_and_refines_scene() {
+        let mut doc = sample_document();
+        doc.chapters[0].sections[0].blocks[1] = Block {
+            kind: Some(block::Kind::Paragraph(koma_core::kir::paragraph(
+                "The old inquisitor entered the frozen chamber under frost.",
+            ))),
+        };
+        let bytes = compile_to(&doc, &HashMap::new());
+        let mut pkg = KomaPackage::open(Cursor::new(bytes)).expect("open");
+        assert_eq!(
+            pkg.manifest().analysis.as_deref(),
+            Some(crate::compiler::ANALYSIS_PATH)
+        );
+        let analysis = pkg.analysis().expect("ok").expect("some analysis");
+        assert_eq!(analysis.generator, "koma-analysis-rules");
+        let ch0 = analysis.chapter("ch0").expect("ch0");
+        assert_eq!(ch0.mood.as_deref(), Some("ominous"));
+        assert!(ch0.entities.iter().any(|e| e.name == "Inquisitor"));
+
+        let scene = pkg.scene("ch0").expect("scene");
+        assert_eq!(
+            scene.environment.kind,
+            koma_scene::EnvironmentKind::Indoor
+        );
+        assert!(scene.environment.atmosphere.contains_key("frost"));
+    }
+
+    #[test]
+    fn no_analyzer_skips_analysis_json() {
+        let doc = sample_document();
+        let mut out = Cursor::new(Vec::new());
+        KomaCompiler
+            .compile_with_analyzer(&doc, &HashMap::new(), None, None, &mut out)
+            .expect("compile");
+        let mut pkg = KomaPackage::open(Cursor::new(out.into_inner())).expect("open");
+        assert!(pkg.manifest().analysis.is_none());
+        assert!(pkg.analysis().expect("ok").is_none());
     }
 }

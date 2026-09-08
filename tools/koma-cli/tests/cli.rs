@@ -319,13 +319,15 @@ fn scenes_are_compiled_inspected_and_used_by_render() {
     let (ok, out) = run(koma(), &["compile", epub.to_str().unwrap()]);
     assert!(ok, "compile failed: {out}");
 
-    // inspect lists the compiled scene per chapter
+    // inspect lists the compiled scene per chapter and analysis
     let (ok, out) = run(koma(), &["inspect", koma_file.to_str().unwrap()]);
     assert!(ok, "inspect failed: {out}");
     assert!(out.contains("scenes (1):"), "inspect: {out}");
     assert!(out.contains("  ch1  "), "inspect: {out}");
+    assert!(out.contains("analysis:   analysis.json"), "inspect: {out}");
 
-    // render applies the chapter scene (no theme present)
+    // render applies the chapter scene refined by analysis
+    // (minimal epub mentions snow → frozen → Outdoor)
     let png = dir.path().join("page.png");
     let (ok, out) = run(
         koma(),
@@ -337,7 +339,7 @@ fn scenes_are_compiled_inspected_and_used_by_render() {
         ],
     );
     assert!(ok, "render failed: {out}");
-    assert!(out.contains("in Abstract environment"), "out: {out}");
+    assert!(out.contains("in Outdoor environment"), "out: {out}");
     assert!(png.exists(), "expected png");
 }
 

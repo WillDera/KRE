@@ -29,6 +29,8 @@ pub enum PackageError {
     Theme(String),
     #[error("scene error: {0}")]
     Scene(String),
+    #[error("analysis error: {0}")]
+    Analysis(String),
     #[error("KIR decode error: {0}")]
     Decode(#[from] prost::DecodeError),
     #[error("zip error: {0}")]
@@ -163,6 +165,17 @@ impl<R: Read + Seek> KomaPackage<R> {
         Scene::parse_json(&bytes).map_err(|e| PackageError::Scene(e.to_string()))
     }
 
+    /// Compile-time analysis embedded in this package, if any.
+    pub fn analysis(&mut self) -> Result<Option<koma_analysis::AnalysisResult>, PackageError> {
+        let Some(path) = self.manifest.analysis.clone() else {
+            return Ok(None);
+        };
+        let bytes = self.read_file(&path)?;
+        koma_analysis::AnalysisResult::from_json(&bytes)
+            .map(Some)
+            .map_err(|e| PackageError::Analysis(e.to_string()))
+    }
+
     pub fn scene_count(&self) -> usize {
         self.manifest.scenes.len()
     }
@@ -226,6 +239,7 @@ mod tests {
             chapters: Vec::new(),
             assets: Vec::new(),
             theme: None,
+            analysis: None,
             scenes: Vec::new(),
         };
         let mut buf = Cursor::new(Vec::new());

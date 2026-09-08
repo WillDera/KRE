@@ -20,9 +20,27 @@ use crate::scene::{
 };
 use crate::timeline::{ActionKind, Timeline, TimelineAction, TimelineEvent};
 
+/// Chapter-level semantic hints used to refine presentation (mood /
+/// environment). Owned by analysis; never content truth.
+#[derive(Debug, Clone, Default)]
+pub struct SceneAnalysisHints {
+    pub mood: Option<String>,
+    pub environment: Option<String>,
+}
+
 /// Build the default scene for one chapter.
 #[allow(clippy::field_reassign_with_default)]
-pub fn default_scene_for_chapter(chapter_id: &str, theme: &Theme, _blocks: &[Block]) -> Scene {
+pub fn default_scene_for_chapter(chapter_id: &str, theme: &Theme, blocks: &[Block]) -> Scene {
+    default_scene_for_chapter_with_hints(chapter_id, theme, blocks, None)
+}
+
+/// Build the default scene, optionally applying compile-time analysis hints.
+pub fn default_scene_for_chapter_with_hints(
+    chapter_id: &str,
+    theme: &Theme,
+    _blocks: &[Block],
+    hints: Option<&SceneAnalysisHints>,
+) -> Scene {
     let mut scene = Scene::default();
     scene.chapter_id = chapter_id.to_owned();
 
@@ -132,7 +150,49 @@ pub fn default_scene_for_chapter(chapter_id: &str, theme: &Theme, _blocks: &[Blo
         duration: 0.6,
     }];
 
+    if let Some(hints) = hints {
+        apply_chapter_analysis(&mut scene, hints);
+    }
+
     scene
+}
+
+/// Refine a scene from chapter analysis. Presentation only — never touches
+/// content. Deterministic for identical hints.
+pub fn apply_chapter_analysis(scene: &mut Scene, hints: &SceneAnalysisHints) {
+    if let Some(env) = hints.environment.as_deref() {
+        scene.environment.kind = environment_kind(env);
+        if env.eq_ignore_ascii_case("frozen") {
+            scene.environment.atmosphere.insert("frost".to_owned(), 0.6);
+        }
+    }
+    if let Some(mood) = hints.mood.as_deref() {
+        match mood.to_ascii_lowercase().as_str() {
+            "ominous" => {
+                scene
+                    .environment
+                    .atmosphere
+                    .entry("frost".to_owned())
+                    .or_insert(0.45);
+            }
+            "dark" => {
+                scene.lighting.ambient.intensity = scene.lighting.ambient.intensity.min(0.55);
+            }
+            "warm" => {
+                scene.lighting.ambient.intensity = scene.lighting.ambient.intensity.max(0.95);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn environment_kind(label: &str) -> EnvironmentKind {
+    match label.to_ascii_lowercase().as_str() {
+        "space" => EnvironmentKind::Space,
+        "indoor" => EnvironmentKind::Indoor,
+        "outdoor" | "frozen" => EnvironmentKind::Outdoor,
+        _ => EnvironmentKind::Abstract,
+    }
 }
 
 /// Map a theme particle name onto an effect kind.
@@ -244,5 +304,17 @@ particles:
             .find(|n| n.kind == NodeKind::EffectLayer)
             .expect("effect layer");
         assert_eq!(layer.effects[0].kind, EffectKind::Particles);
+    }
+
+    #[test]
+    fn analysis_hints_set_environment_and_atmosphere() {
+        let theme = themed();
+        let hints = SceneAnalysisHints {
+            mood: Some("ominous".into()),
+            environment: Some("space".into()),
+        };
+        let scene = default_scene_for_chapter_with_hints("ch1", &theme, &[], Some(&hints));
+        assert_eq!(scene.environment.kind, EnvironmentKind::Space);
+        assert!(scene.environment.atmosphere.contains_key("frost"));
     }
 }
