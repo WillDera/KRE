@@ -39,8 +39,8 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 7 | GPU renderer (wgpu) | `koma-renderer` | done |
 | 8 | Network service | `koma-server` | done |
 | 9 | Pagination + page-break engine + hit testing | `koma-renderer` | done |
-| 10 | Selection / highlight / annotation polish | `koma-renderer` | next |
-| 11 | Rule-based `koma-analysis`, then optional AI compile | `koma-analysis` | queued |
+| 10 | Selection / highlight / annotation polish | `koma-renderer` | done |
+| 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | next |
 
 Roadmap (not started, tracked outside phases):
 
