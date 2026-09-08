@@ -1,31 +1,40 @@
 //! The `Theme` data model: a versioned, user-editable presentation spec.
 //!
-//! Only `typography` and `colors` take effect in the current software
-//! renderer. `effects` and `particles` are declarative and versioned for
-//! forward compatibility; the renderer stores and validates them but renders
-//! them inert (static fallback per AGENTS.md). Audio is deferred.
+//! Format v0.2 adds a genre axis and per-role typography (drop caps, first-line
+//! indent, justification, weight, decorative rules). v0.1 themes remain valid
+//! (migration: accepted as presentation with empty roles).
 
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::genre::{RoleStyle, RoleStyleSet, genre_preset};
 use crate::Color;
 
 /// Current theme format version. Breaking changes require migration.
-pub const THEME_VERSION: &str = "0.1.0";
+pub const THEME_VERSION: &str = "0.2.0";
+/// Versions accepted by [`Theme::validate`] (inclusive migration).
+pub const SUPPORTED_THEME_VERSIONS: &[&str] = &["0.1.0", "0.2.0"];
 
 /// A complete theme. YAML-serializable, user-editable, shareable, versioned.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Theme {
-    /// Theme format version (validated against [`THEME_VERSION`]).
+    /// Theme format version (validated against [`SUPPORTED_THEME_VERSIONS`]).
     pub version: String,
     /// Human-readable name (e.g. "Imperial Archive").
     pub name: String,
+    /// Genre selection axis (e.g. `literary`, `fantasy`, `technical`, `noir`).
+    /// When set, built-in role presets apply; explicit `roles` override them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub genre: Option<String>,
     /// Asset attribution (AGENTS.md License and Attribution System).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub info: Option<ThemeInfo>,
     #[serde(default)]
     pub typography: Typography,
+    /// Per-role overrides keyed by `body`, `h1`/`heading`, `h2`, `h3`, `quote`.
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub roles: HashMap<String, RoleStyle>,
     #[serde(default)]
     pub colors: ColorScheme,
     #[serde(default)]
@@ -47,7 +56,7 @@ impl Theme {
 
     /// Validate format version and field sanity.
     pub fn validate(&self) -> Result<(), ThemeError> {
-        if self.version != THEME_VERSION {
+        if !SUPPORTED_THEME_VERSIONS.contains(&self.version.as_str()) {
             return Err(ThemeError::UnsupportedVersion(
                 self.version.clone(),
                 THEME_VERSION,
@@ -75,7 +84,46 @@ impl Theme {
         if !t.margin.is_finite() || t.margin < 0.0 {
             return Err(ThemeError::Invalid("typography.margin must be >= 0".into()));
         }
+        for (key, role) in &self.roles {
+            if let Some(scale) = role.scale {
+                if !scale.is_finite() || scale <= 0.0 {
+                    return Err(ThemeError::Invalid(format!(
+                        "roles.{key}.scale must be > 0"
+                    )));
+                }
+            }
+            if role.drop_cap.enabled
+                && (!role.drop_cap.scale.is_finite() || role.drop_cap.scale <= 0.0)
+            {
+                return Err(ThemeError::Invalid(format!(
+                    "roles.{key}.drop_cap.scale must be > 0"
+                )));
+            }
+            if role.decorative_rule.enabled
+                && (!role.decorative_rule.thickness.is_finite()
+                    || role.decorative_rule.thickness < 0.0)
+            {
+                return Err(ThemeError::Invalid(format!(
+                    "roles.{key}.decorative_rule.thickness must be >= 0"
+                )));
+            }
+            if !role.first_line_indent.is_finite() || role.first_line_indent < 0.0 {
+                return Err(ThemeError::Invalid(format!(
+                    "roles.{key}.first_line_indent must be >= 0"
+                )));
+            }
+        }
         Ok(())
+    }
+
+    /// Resolve genre presets + explicit role overrides into a deterministic set.
+    pub fn resolved_roles(&self) -> RoleStyleSet {
+        let preset = self
+            .genre
+            .as_deref()
+            .map(genre_preset)
+            .unwrap_or_default();
+        RoleStyleSet::merge(preset, &self.roles)
     }
 
     /// A canonical, minimal theme for the given name (all defaults).
@@ -83,8 +131,10 @@ impl Theme {
         Self {
             version: THEME_VERSION.to_owned(),
             name: name.into(),
+            genre: None,
             info: None,
             typography: Typography::default(),
+            roles: HashMap::new(),
             colors: ColorScheme::default(),
             effects: HashMap::new(),
             particles: HashMap::new(),
@@ -308,5 +358,24 @@ name: Broken
         let out = t.to_yaml().expect("serialize");
         let t2 = Theme::parse_yaml(out.as_bytes()).expect("reparse");
         assert_eq!(t, t2);
+    }
+
+    #[test]
+    fn genre_v02_resolves_roles() {
+        let yaml = r##"
+version: "0.2.0"
+name: Fantasy Folio
+genre: fantasy
+roles:
+  body:
+    first_line_indent: 40
+"##;
+        let t = Theme::parse_yaml(yaml.as_bytes()).expect("parse");
+        t.validate().expect("valid");
+        let roles = t.resolved_roles();
+        assert_eq!(roles.body.first_line_indent, 40.0);
+        assert!(roles.body.drop_cap.enabled, "genre drop cap preserved");
+        assert!(roles.h1.decorative_rule.enabled);
+        assert_eq!(roles.h1.weight, crate::genre::FontWeight::Bold);
     }
 }

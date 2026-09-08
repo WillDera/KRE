@@ -9,9 +9,14 @@
 //! compiler; both consume [`Theme`] and map it onto their own behavior.
 
 pub mod color;
+pub mod genre;
 pub mod theme;
 
 pub use color::Color;
+pub use genre::{
+    DecorativeRule, DropCap, FontWeight, RoleStyle, RoleStyleSet, genre_preset,
+};
 pub use theme::{
-    ColorScheme, Effect, Particle, THEME_VERSION, Theme, ThemeError, ThemeInfo, Typography,
+    ColorScheme, Effect, Particle, SUPPORTED_THEME_VERSIONS, THEME_VERSION, Theme, ThemeError,
+    ThemeInfo, Typography,
 };
