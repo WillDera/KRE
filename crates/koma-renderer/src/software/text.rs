@@ -98,6 +98,7 @@ pub fn draw_text_item(
                     offset_x: physical.cache_key.x_bin.as_float(),
                     offset_y: physical.cache_key.y_bin.as_float(),
                     color,
+                    byte_range: (glyph.start as u32, glyph.end as u32),
                 },
             );
         }

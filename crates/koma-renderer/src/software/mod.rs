@@ -11,7 +11,7 @@ use cosmic_text::FontSystem;
 use koma_core::kir::Block;
 
 use crate::backend::{BackendError, Capabilities, Frame, RenderBackend, RenderPrimitive};
-use crate::layout::{LayoutConfig, layout_blocks};
+use crate::layout::{LayoutConfig, layout_blocks, paginate_blocks};
 
 /// CPU rasterizer implementing [`RenderBackend`].
 pub struct SoftwareBackend {
@@ -61,6 +61,27 @@ impl SoftwareBackend {
             }
         }
         Ok(frame)
+    }
+
+    /// Paginate `blocks` and render every page into its own frame.
+    pub fn render_paginated(
+        &mut self,
+        blocks: &[Block],
+        cfg: &LayoutConfig,
+    ) -> Result<Vec<Frame>, BackendError> {
+        let paginated = paginate_blocks(&mut self.font_system, blocks, cfg);
+        let mut frames = Vec::with_capacity(paginated.page_count());
+        for page in &paginated.pages {
+            let mut frame = Frame::new(cfg.width, cfg.height);
+            frame.fill(cfg.background);
+            for line in &page.lines {
+                for g in &line.glyphs {
+                    text::rasterize_glyph(&self.font_system, &mut frame, *g);
+                }
+            }
+            frames.push(frame);
+        }
+        Ok(frames)
     }
 }
 

@@ -20,7 +20,7 @@ use swash::scale::{Render, ScaleContext, Source};
 use swash::zeno::{Format, Vector};
 
 use crate::backend::{BackendError, Capabilities, Frame, RenderBackend, RenderPrimitive};
-use crate::layout::{LayoutConfig, PlacedGlyph, PlacedLine, layout_blocks};
+use crate::layout::{LayoutConfig, PlacedGlyph, PlacedLine, layout_blocks, paginate_blocks};
 
 use atlas::{AtlasRect, GlyphAtlas};
 
@@ -143,6 +143,33 @@ impl WgpuBackend {
         self.composite(cfg.width, cfg.height, cfg.background, &vertices, &atlas)
     }
 
+    /// Paginate `blocks` and render every page into its own frame.
+    pub fn render_paginated(
+        &mut self,
+        blocks: &[Block],
+        cfg: &LayoutConfig,
+    ) -> Result<Vec<Frame>, BackendError> {
+        let paginated = paginate_blocks(&mut self.font_system, blocks, cfg);
+        let mut frames = Vec::with_capacity(paginated.page_count());
+        for page in &paginated.pages {
+            let (vertices, atlas) = self.build_quads(&page.lines)?;
+            if vertices.is_empty() {
+                let mut frame = Frame::new(cfg.width, cfg.height);
+                frame.fill(cfg.background);
+                frames.push(frame);
+            } else {
+                frames.push(self.composite(
+                    cfg.width,
+                    cfg.height,
+                    cfg.background,
+                    &vertices,
+                    &atlas,
+                )?);
+            }
+        }
+        Ok(frames)
+    }
+
     /// Shape a free-form text item into placed glyphs (render-primitives path).
     fn shape_text_item(
         &mut self,
@@ -183,10 +210,14 @@ impl WgpuBackend {
                     offset_x: physical.cache_key.x_bin.as_float(),
                     offset_y: physical.cache_key.y_bin.as_float(),
                     color: item.color,
+                    byte_range: (glyph.start as u32, glyph.end as u32),
                 });
             }
             if !glyphs.is_empty() {
-                lines.push(PlacedLine { glyphs });
+                lines.push(PlacedLine {
+                    glyphs,
+                    line_height: metrics.line_height,
+                });
             }
         }
         lines
