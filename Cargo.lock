@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "koma-analysis"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-core",
  "serde",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "koma-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "koma-compiler"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-analysis",
  "koma-core",
@@ -762,7 +762,7 @@ dependencies = [
 
 [[package]]
 name = "koma-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "prost",
  "prost-build",
@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "koma-epub"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-core",
  "roxmltree",
@@ -782,7 +782,7 @@ dependencies = [
 
 [[package]]
 name = "koma-markdown"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-core",
  "pulldown-cmark",
@@ -792,7 +792,7 @@ dependencies = [
 
 [[package]]
 name = "koma-renderer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "cosmic-text",
@@ -808,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "koma-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-compiler",
  "koma-core",
@@ -823,7 +823,7 @@ dependencies = [
 
 [[package]]
 name = "koma-scene"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "koma-core",
  "koma-theme",
@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "koma-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -857,7 +857,7 @@ dependencies = [
 
 [[package]]
 name = "koma-theme"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_yaml",
