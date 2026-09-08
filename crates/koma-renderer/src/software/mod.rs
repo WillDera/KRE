@@ -12,6 +12,7 @@ use koma_core::kir::Block;
 
 use crate::backend::{BackendError, Capabilities, Frame, RenderBackend, RenderPrimitive};
 use crate::layout::{LayoutConfig, layout_blocks, paginate_blocks};
+use crate::selection::{UserMark, paint_rects};
 
 /// CPU rasterizer implementing [`RenderBackend`].
 pub struct SoftwareBackend {
@@ -69,11 +70,30 @@ impl SoftwareBackend {
         blocks: &[Block],
         cfg: &LayoutConfig,
     ) -> Result<Vec<Frame>, BackendError> {
+        self.render_paginated_with_marks(blocks, cfg, &[])
+    }
+
+    /// Paginate and render, painting user-mark underlays (highlights) before
+    /// glyphs. Marks are user state — they never mutate KIR content.
+    pub fn render_paginated_with_marks(
+        &mut self,
+        blocks: &[Block],
+        cfg: &LayoutConfig,
+        marks: &[UserMark],
+    ) -> Result<Vec<Frame>, BackendError> {
         let paginated = paginate_blocks(&mut self.font_system, blocks, cfg);
         let mut frames = Vec::with_capacity(paginated.page_count());
-        for page in &paginated.pages {
+        for (page_idx, page) in paginated.pages.iter().enumerate() {
             let mut frame = Frame::new(cfg.width, cfg.height);
             frame.fill(cfg.background);
+            for mark in marks {
+                if matches!(mark.kind, crate::selection::MarkKind::Highlight)
+                    || mark.color.is_some()
+                {
+                    let rects = paginated.rects_for_range(page_idx, &mark.range);
+                    paint_rects(&mut frame, &rects, mark.resolve_color());
+                }
+            }
             for line in &page.lines {
                 for g in &line.glyphs {
                     text::rasterize_glyph(&self.font_system, &mut frame, *g);
@@ -176,6 +196,42 @@ mod tests {
         assert_eq!(frame.height, 200);
         let opaque = frame.pixels.chunks_exact(4).filter(|px| px[3] > 0).count();
         assert!(opaque > 0);
+    }
+
+    #[test]
+    fn paginated_marks_paint_highlight_underlay() {
+        use crate::selection::{TextAnchor, TextRange, UserMark};
+
+        let mut backend = SoftwareBackend::new();
+        let cfg = LayoutConfig {
+            width: 400,
+            height: 200,
+            margin: 10.0,
+            font_size: 20.0,
+            line_height: 28.0,
+            ..Default::default()
+        };
+        let blocks = vec![Block {
+            kind: Some(koma_core::kir::block::Kind::Paragraph(koma_core::kir::paragraph(
+                "Highlight me please",
+            ))),
+        }];
+        let plain = backend.render_paginated(&blocks, &cfg).unwrap();
+        let marked = backend
+            .render_paginated_with_marks(
+                &blocks,
+                &cfg,
+                &[UserMark::highlight(
+                    "h1",
+                    TextRange::new(TextAnchor::new(0, 0), TextAnchor::new(0, 9)),
+                )],
+            )
+            .unwrap();
+        assert_eq!(plain.len(), marked.len());
+        assert_ne!(
+            plain[0].pixels, marked[0].pixels,
+            "highlight underlay must change the frame"
+        );
     }
 
     #[test]

@@ -14,6 +14,7 @@ pub mod backend;
 pub mod gpu;
 pub mod layout;
 pub mod scene;
+pub mod selection;
 pub mod software;
 pub mod theme;
 
@@ -26,6 +27,9 @@ pub use layout::{
     paginate_blocks,
 };
 pub use scene::layout_config_from_scene;
+pub use selection::{
+    HighlightRect, MarkKind, TextAnchor, TextRange, UserMark, extract_plain_text, paint_rects,
+};
 pub use software::SoftwareBackend;
 pub use theme::layout_config_from_theme;
 

@@ -156,6 +156,21 @@ impl Frame {
         }
         dst[3] = (oa * 255.0).round() as u8;
     }
+
+    /// Fill an axis-aligned rectangle with source-over blending (highlight
+    /// underlays, selection chrome).
+    pub fn fill_rect(&mut self, x: i32, y: i32, width: i32, height: i32, color: Color) {
+        if width <= 0 || height <= 0 {
+            return;
+        }
+        let x1 = x + width;
+        let y1 = y + height;
+        for py in y.max(0)..y1.min(self.height as i32) {
+            for px in x.max(0)..x1.min(self.width as i32) {
+                self.blend_pixel(px, py, color);
+            }
+        }
+    }
 }
 
 /// What a backend can do (used for feature negotiation / fallbacks).
