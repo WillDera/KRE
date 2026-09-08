@@ -41,14 +41,14 @@ contributing. Design notes live in [`DESIGN.md`](DESIGN.md).
 | 9 | Pagination + page-break engine + hit testing | `koma-renderer` | done |
 | 10 | Selection / highlight / annotation polish | `koma-renderer` | done |
 | 11 | Rule-based `koma-analysis`, then optional compile-time assistance | `koma-analysis` | done |
+| 12 | Genre-based typography (theme v0.2) | `koma-theme`, `koma-renderer` | done |
 
 Roadmap (not started, tracked outside phases):
 
-- **Genre-based typography** — theme spec v0.2: per-role heading styles
-  (drop caps, decorative rules, first-line indent, justification, weight)
-  plus a genre selection axis across themes.
 - **External assisted compilation backends** — optional model backends behind
   `AssistedAnalyzer` with mandatory rule-based fallback (compile-time only).
+- **GPU decoration parity polish** — richer ornament primitives beyond fill_rect
+  underlays for decorative rules.
 
 ## Workspace
 
@@ -99,7 +99,8 @@ HTTP API.
 |---|---|
 | [`docs/kir-spec-v0.1.md`](docs/kir-spec-v0.1.md) | KIR document model |
 | [`docs/koma-format-spec-v0.1.md`](docs/koma-format-spec-v0.1.md) | `.koma` package format |
-| [`docs/theme-spec-v0.1.md`](docs/theme-spec-v0.1.md) | theme YAML format |
+| [`docs/theme-spec-v0.1.md`](docs/theme-spec-v0.1.md) | theme YAML format (v0.1) |
+| [`docs/theme-spec-v0.2.md`](docs/theme-spec-v0.2.md) | theme YAML format (v0.2 genre + roles) |
 | [`docs/scene-spec-v0.1.md`](docs/scene-spec-v0.1.md) | scene graph JSON format |
 | [`docs/network-api-spec-v0.1.md`](docs/network-api-spec-v0.1.md) | HTTP network API |
 | [`docs/plugin-api-spec-v0.1.md`](docs/plugin-api-spec-v0.1.md) | plugin / adapter API |
