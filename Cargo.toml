@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/koma-core",
     "crates/koma-adapters/koma-epub",
+    "crates/koma-analysis",
     "crates/koma-compiler",
     "crates/koma-renderer",
     "crates/koma-scene",
